@@ -60,10 +60,15 @@ internal static class Patch_Level_StartInit_Gate
             if (m == null) throw new MissingMethodException(typeof(LevelManager).FullName, "InitLevel");
             CoopLogSystem.WriteNetworkDiagnostic($"[SCENE] Gate finished: initializing '{sceneId}'");
             m.Invoke(self, new object[] { ctx });
+            // 客户端门闩走完 InitLevel 后再修本地移动（Mac 上 WalkSpeed Value 可能仍为 0）。
+            // Repair local movement after the client gate finishes InitLevel
+            // (on Mac, WalkSpeed Value may still be 0).
+            MacLocalInputUnlock.ScheduleAfterLevelReady("client-gate-InitLevel");
         }
         catch (Exception e)
         {
             Debug.LogError("[SCENE] StartInit gate -> InitLevel failed: " + e);
+            MacLocalInputUnlock.ScheduleAfterLevelReady("client-gate-InitLevel-failed");
         }
     }
 }

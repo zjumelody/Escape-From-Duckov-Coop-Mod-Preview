@@ -2124,10 +2124,20 @@ public class MModUI : MonoBehaviour
 
     internal bool IsChatTyping()
     {
+        // 聊天面板必须是玩家主动打开的。Mac 上 TMP 焦点会在切场景后还留着，
+        // 即使面板不该抢走游戏输入，IsChatTyping 也会把 MainPlayerInput 关掉。
+        // Chat must be intentionally open. On Mac, TMP can stay focused across scene
+        // loads and IsChatTyping would disable MainPlayerInput even when the panel
+        // should not steal gameplay input.
+        if (!_chatVisible)
+            return false;
+
         var input = _components?.ChatInput;
         if (input == null) return false;
         if (!input.isActiveAndEnabled) return false;
         if (!input.gameObject.activeInHierarchy) return false;
+        if (_components.ChatPanel != null && !_components.ChatPanel.activeInHierarchy)
+            return false;
 
         try
         {
@@ -2136,6 +2146,43 @@ public class MModUI : MonoBehaviour
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// 地图/关卡加载后调用，避免残留的 TMP 焦点一直禁用 MainPlayerInput。
+    /// Called after a map/level load so leftover TMP focus cannot keep MainPlayerInput disabled.
+    /// </summary>
+    internal void ForceCloseChatForMovement()
+    {
+        try
+        {
+            _chatVisible = false;
+            _chatAutoHideArmed = false;
+            if (_chatAutoHideRoutine != null)
+            {
+                StopCoroutine(_chatAutoHideRoutine);
+                _chatAutoHideRoutine = null;
+            }
+
+            if (_components?.ChatInput != null)
+            {
+                try { _components.ChatInput.DeactivateInputField(); } catch { }
+                try { _components.ChatInput.text = _components.ChatInput.text; } catch { }
+            }
+
+            if (_components?.ChatPanel != null && _components.ChatPanel.activeSelf)
+                _components.ChatPanel.SetActive(false);
+
+            if (UnityEngine.EventSystems.EventSystem.current != null &&
+                _components?.ChatInput != null &&
+                UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject == _components.ChatInput.gameObject)
+            {
+                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+            }
+        }
+        catch
+        {
         }
     }
 

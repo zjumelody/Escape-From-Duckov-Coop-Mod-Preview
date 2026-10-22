@@ -5,6 +5,8 @@
 
 English | **[简体中文](README.md)**
 
+> macOS / Apple Silicon build, install, sandbox network entitlements, and the shared co-op version check are documented in **[README_MAC.md](README_MAC.md)**. This fork ships one managed DLL for Windows and Mac. `BuildInfo.ModVersion` is **1.4.2**, and every peer on any OS must use that exact string. History: [MAC_ARM64_CHANGELOG.md](MAC_ARM64_CHANGELOG.md).
+
 ---
 
 ## 📖 Introduction

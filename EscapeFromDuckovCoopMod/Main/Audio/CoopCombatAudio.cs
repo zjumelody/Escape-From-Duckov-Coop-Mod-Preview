@@ -66,6 +66,10 @@ internal static class CoopCombatAudio
 [HarmonyPatch(typeof(AudioManager), "OnBulletFlyby")]
 internal static class CoopBulletFlybyAudioPatch
 {
+    // 与 MPost 相同：OSX 上不要挂钩 AudioManager。飞过弹道的音效补丁会走到同一处 FMOD/MonoMod 崩溃。
+    // Same rule as MPost: do not hook AudioManager on OSX. The flyby patch hits the same FMOD/MonoMod crash.
+    static bool Prepare() => !ModBehaviour.IsOsxRuntime();
+
     private static bool Prefix(Vector3 __0)
     {
         if (NetService.Instance == null || !NetService.Instance.networkStarted)

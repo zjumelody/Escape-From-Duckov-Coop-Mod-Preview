@@ -893,6 +893,12 @@ public class SceneNet : MonoBehaviour
         finally
         {
             if (generation == _clientGateGeneration) WaitingSynchronizationUI.Instance?.Hide();
+            // 客户端过门后恢复本地移动。Mac 上 MultiScene 之后 WalkSpeed Value 可能为 0，
+            // MainPlayerInput 也可能被残留的聊天焦点关掉。详见 MacLocalInputUnlock。
+            // Restore local movement after the client gate. On Mac, WalkSpeed Value can be 0
+            // after MultiScene, and leftover chat focus can leave MainPlayerInput disabled.
+            // See MacLocalInputUnlock.
+            MacLocalInputUnlock.ScheduleAfterLevelReady("client-scene-gate");
         }
     }
 
@@ -906,6 +912,9 @@ public class SceneNet : MonoBehaviour
 
         // 确保在主线程下一帧再去放行客户端，避免加载钩子里抢占资源导致卡住
         await UniTask.Yield();
+        // 主机自己也要走同一套进图解锁。逻辑在 Mac 上修 WalkSpeed，在其他系统上只做无害的收尾。
+        // The host runs the same post-load unlock. On Mac it repairs WalkSpeed; elsewhere it only does harmless cleanup.
+        MacLocalInputUnlock.ScheduleAfterLevelReady("server-scene-gate");
 
         // 放行已经举手的所有客户端
         if (playerStatuses != null && playerStatuses.Count > 0)
