@@ -1,181 +1,60 @@
-<div align="center">
-
-# 🦆 逃离鸭科夫联机模组 · 正式版
-
-**让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
-
-[![Version](https://img.shields.io/badge/Version-1.4.1-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
-[![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
-[![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
-[![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
-[![Issues](https://img.shields.io/github/issues/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues)
-[![Last Commit](https://img.shields.io/github/last-commit/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/commits/master)
-[![License](https://img.shields.io/badge/License-Modified%20AGPL--3.0-blue?style=flat-square)](LICENSE.txt)
-
-**[Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)** · **[更新记录](CHANGELOG.md)** · **[问题反馈](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues)**
+# 逃离鸭科夫联机模组（Melody Fork · Mac 兼容）
 
 [English](README_EN.md) | **简体中文**
 
-</div>
+本人 Fork 过来修改更新了写代码以便支持 Mac 和 Mac 之间联机，也支持 Mac 和 Windows 联机。
+想要测试的朋友们也可以自行下载 [Release](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases) 里的测试版进行测试。
+不过除了下载此 Mod 文件外，也要对游戏 App 进行一些处理，方法如下：
 
-> [!IMPORTANT]
-> 当前版本为 **v1.4.1**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
+## Mac 游戏 App 处理（必须）
 
-## 📖 项目简介
+官方/Steam 安装的原版 `Duckov.app` 带有 App Sandbox，且缺少联机所需的网络权限；把 Mods 装进原版还可能导致系统提示 App 已损坏。请**复制一份**再改权限并签名，Mods 只装进副本。
 
-**Escape From Duckov Coop Mod** 是为《逃离鸭科夫》（Escape From Duckov）开发的联机合作模组。项目专注于同步玩家、AI、战斗、场景交互与战利品等核心游戏状态，让原本的单人流程能够与朋友共同体验。
+### 推荐：一键脚本
 
-| 项目 | 当前信息 |
-| --- | --- |
-| 模组版本 | **v1.4.1** |
-| 发布状态 | **正式版** |
-| 发布渠道 | [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) |
-| 创意工坊 ID | `3591341282` |
-| 联机方式 | 局域网 / 在线联机 |
-| 构建目标 | .NET Standard 2.1 |
+脚本放在 [`scripts/mac/prepare-duckov-coop-app.sh`](scripts/mac/prepare-duckov-coop-app.sh)，配套 entitlements 为 [`scripts/mac/duckov-coop.entitlements`](scripts/mac/duckov-coop.entitlements)。简短说明见 [`scripts/mac/README.md`](scripts/mac/README.md)。Release 里也可能附上同一份脚本，方便直接下载。
 
-## ✨ 功能概览
+1. 安装正版游戏，确认 `/Applications/Duckov.app` 存在（或记下你的安装路径）。
+2. 下载本仓库 [`scripts/mac/prepare-duckov-coop-app.sh`](scripts/mac/prepare-duckov-coop-app.sh)（也可从 Release 附件下载；建议把同目录的 `duckov-coop.entitlements` 一起放在脚本旁边）。
+3. 在「终端」执行：
 
-| 模块 | 已支持内容 |
-| --- | --- |
-| 👥 玩家同步 | 位置、动作、外观、装备、血量与玩家名称 |
-| 🤖 AI 同步 | 敌人生成、移动、状态、受伤、死亡与血条 |
-| ⚔️ 战斗同步 | 枪械、近战、投掷物、伤害与属性效果 |
-| 📦 战利品同步 | 掉落物、战利品箱、拾取与场景容器 |
-| 🗺️ 场景同步 | 门、可破坏物、付费交互、抽奖装置与挑战触发器 |
-| 🚙 载具同步 | 载具状态、乘坐、控制权与加油状态 |
-| 🎮 联机流程 | 房间版本校验、地图切换投票、重连与死亡观战 |
-| 🖥️ 联机界面 | 房间管理、同步设置、状态提示与主题界面 |
-
-## 🚀 快速开始
-
-普通玩家无需下载源码或手动编译：
-
-1. 在 [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) 订阅模组。
-2. 启动游戏，并在模组管理界面中启用本模组。
-3. 确认所有参与联机的玩家使用相同版本。
-4. 由一名玩家创建联机房间，其他玩家加入后即可开始游戏。
-
-需要自行构建或参与开发时，请继续阅读下方的编译指南。
-
-## 🛠️ 编译指南
-
-### 前置要求
-
-- Visual Studio 2019 或更高版本
-- 支持 .NET Standard 2.1 的 .NET SDK
-- 已安装《逃离鸭科夫》
-
-### 1. 配置游戏路径
-
-首次编译前，需要设置游戏根目录环境变量 `DUCKOV_GAME_DIRECTORY`。
-
-#### 自动配置（推荐）
-
-1. 双击项目根目录中的 `SetEnvVars_Permanent.bat`。
-2. 按提示输入游戏文件夹的完整路径，例如：
-
-   ```text
-   C:\Steam\steamapps\common\Escape from Duckov
-   ```
-
-3. 脚本会写入当前用户的永久环境变量。
-4. 完全关闭并重新打开 Visual Studio 或命令行，使变量生效。
-
-#### 手动配置
-
-在 Windows 的“环境变量”设置中新增用户变量：
-
-```text
-变量名：DUCKOV_GAME_DIRECTORY
-变量值：游戏根目录的完整路径
+```bash
+chmod +x prepare-duckov-coop-app.sh
+./prepare-duckov-coop-app.sh
 ```
 
-### 2. 准备依赖
+游戏若不在默认位置，加上你的安装路径：
 
-确认 `Shared` 文件夹中包含以下依赖：
-
-- `0Harmony.dll`
-- `LiteNetLib.dll`
-
-游戏自身的程序集会根据 `DUCKOV_GAME_DIRECTORY` 自动从 `Duckov_Data\Managed` 目录引用。
-
-### 3. 编译项目
-
-1. 打开 `EscapeFromDuckovCoopMod.sln`。
-2. 选择 `Release` 配置。
-3. 生成解决方案。
-
-编译输出位于 `EscapeFromDuckovCoopMod/bin/Release/`。
-
-### 常见问题
-
-<details>
-<summary><strong>编译时提示找不到游戏 DLL</strong></summary>
-
-确认 `DUCKOV_GAME_DIRECTORY` 指向游戏根目录，而不是 `Duckov_Data` 或 `Managed` 子目录；设置后需要重新打开 Visual Studio。
-
-</details>
-
-<details>
-<summary><strong>如何确认环境变量已经生效</strong></summary>
-
-在新的命令提示符窗口中执行：
-
-```bat
-echo %DUCKOV_GAME_DIRECTORY%
+```bash
+./prepare-duckov-coop-app.sh --source "/path/to/Duckov.app"
 ```
 
-</details>
+默认会生成 `~/Applications/Duckov-COOP.app`（去掉 App Sandbox、加入 network.client / network.server，并用本机 `codesign` 身份 `-` 重新签名；无需 Apple 开发者账号）。
 
-<details>
-<summary><strong>游戏路径中包含空格或括号</strong></summary>
+可选：把解压后的 Mods 目录一并装入副本：
 
-配置脚本支持包含空格和括号的路径，例如 `Program Files (x86)`，直接输入完整路径即可。
+```bash
+./prepare-duckov-coop-app.sh --mods-dir /path/to/Mods
+```
 
-</details>
+若把 Release 压缩包（例如 `EscapeFromDuckovCoopMod*.zip`）和脚本放在同一目录，脚本会在签名前把它装进副本的 `Contents/Mods/`。
 
-## 🤝 参与与反馈
+### 脚本在做什么（等价手动步骤）
 
-欢迎通过 [Issues](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues) 报告问题，或在 [Discussions](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/discussions) 中交流建议。
+1. 复制 `/Applications/Duckov.app` → `~/Applications/Duckov-COOP.app`（不改动原版）。
+2. 调整副本的 entitlements：关闭 App Sandbox；启用 `com.apple.security.network.client` 与 `com.apple.security.network.server`。
+3. 对本机副本执行 `codesign` 本地签名（身份 `-`）。每人在自己电脑上对自己的副本签一次即可。
+4. 将本 Fork Release 中的联机 Mod（及所需依赖 Mod）放入 `Duckov-COOP.app/Contents/Mods/`。
+5. **只启动** `Duckov-COOP.app` 进行联机；联机各方 ModVersion 字符串必须完全一致（Windows / Mac 共用同一版本号，例如 Release 中的 `1.4.2`）。
 
-提交问题时，建议附上以下信息：
+### 注意
 
-- 模组版本与游戏版本
-- 主机或客户端身份
-- 问题复现步骤
-- 相关日志、截图或视频
+- 不要把 Mods 安装进原版 `/Applications/Duckov.app`。
+- Steam「验证游戏完整性」可能影响原版；副本若异常请重新运行脚本。
+- 不需要 Apple 开发者账号。
+- 目标副本已存在时，脚本会询问是否替换；直接替换可加 `--force`。重新运行会保留副本里已经装好的 Mods，并在复制之后重新签名。
 
-## 💡 致谢
+许可证：[LICENSE.txt](LICENSE.txt)
 
-特别感谢以下开发者和测试者对项目的支持：
-
-- **Neko17** — 核心开发
-- **Prototype-alpha** — 功能开发与优化
-- **所有参与调试与联机测试的朋友们**
-
-本项目使用了以下开源项目：
-
-- [HarmonyLib](https://github.com/pardeike/Harmony) — 运行时代码修改框架
-- [LiteNetLib](https://github.com/RevenantX/LiteNetLib) — UDP 网络库
-
-## 📄 许可证
-
-本项目使用基于 **AGPL-3.0 修改的协议**发布。使用或分发衍生作品前，请完整阅读许可证文件：
-
-- [LICENSE.txt](LICENSE.txt) — 完整许可证文本
-- [LICENSE_RESTRICTIONS.txt](LICENSE_RESTRICTIONS.txt) — 额外限制说明
-
-主要要求包括：
-
-- ❌ 禁止商业用途
-- ❌ 禁止私有服务器闭源使用
-- ✅ 必须署名原作者
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，欢迎点亮一个 ⭐ Star。**
-
-</div>
+感谢原作者的奉献，世界有他们更精彩，原地址：https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
+请支持他们的劳动成果并遵守相关法规法则！

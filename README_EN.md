@@ -1,177 +1,60 @@
-# 🦆 Escape From Duckov Coop Mod
+# Escape From Duckov Co-op Mod (Melody Fork · Mac compatible)
 
-[![License](https://img.shields.io/badge/License-Modified%20AGPL--3.0-blue.svg)](LICENSE.txt)
-[![Steam Workshop](https://img.shields.io/badge/Steam-Workshop-blue.svg)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+**[简体中文](README.md)** | English
 
-English | **[简体中文](README.md)**
+This fork is updated so Mac players can co-op with each other and with Windows players.
+Test builds are on the [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases) page.
+Downloading the mod is not enough on Mac: the game app needs the short local preparation below.
 
----
+## Prepare the Mac game app (required)
 
-## 📖 Introduction
+The official / Steam `Duckov.app` uses App Sandbox and does not include the network entitlement co-op needs. Putting Mods inside that original app can also make the system report the app as damaged. **Copy the app**, adjust the copy, and install Mods only into the copy.
 
-**Escape From Duckov Coop Mod** is a multiplayer co-op mod developed for the game Escape From Duckov.
+### Recommended: one script
 
-This mod enables stable LAN and online co-op gameplay in a game originally designed for single-player, featuring:
+The script is [`scripts/mac/prepare-duckov-coop-app.sh`](scripts/mac/prepare-duckov-coop-app.sh). Its entitlements file is [`scripts/mac/duckov-coop.entitlements`](scripts/mac/duckov-coop.entitlements). Short notes: [`scripts/mac/README.md`](scripts/mac/README.md). A Release may also attach the same script for a one-click download.
 
-- 🎮 Multiplayer synchronization
-- 🤖 AI behavior synchronization
-- 📦 Loot sharing
-- 👻 Death spectator mode
-- ⚔️ Complete combat synchronization
-- 🌐 LAN/Online multiplayer support
+1. Install the official game and confirm `/Applications/Duckov.app` exists (or note your install path).
+2. Download [`scripts/mac/prepare-duckov-coop-app.sh`](scripts/mac/prepare-duckov-coop-app.sh) (or the Release attachment). Keep `duckov-coop.entitlements` beside the script when you download both.
+3. In Terminal:
 
----
+```bash
+chmod +x prepare-duckov-coop-app.sh
+./prepare-duckov-coop-app.sh
+```
 
-## 🎯 How to Use
+If the game is not in the default location:
 
-### For Players
+```bash
+./prepare-duckov-coop-app.sh --source "/path/to/Duckov.app"
+```
 
-**No manual installation or build is required.**
+The default result is `~/Applications/Duckov-COOP.app` (App Sandbox removed, `network.client` / `network.server` added, re-signed with the local `codesign` identity `-`. No Apple Developer account).
 
-Simply subscribe on Steam Workshop:
+Optional: install an unzipped Mods folder into the copy:
 
-👉 **[Steam Workshop Page](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)**
+```bash
+./prepare-duckov-coop-app.sh --mods-dir /path/to/Mods
+```
 
-After subscribing, launch the game and enable the mod to start playing cooperatively.
+If a Release zip (for example `EscapeFromDuckovCoopMod*.zip`) sits next to the script, the script installs it into the copy's `Contents/Mods/` before signing.
 
-### For Developers
+### What the script does (same steps by hand)
 
-If you want to build from source or contribute to development, please refer to the [Build Guide](#-build-guide).
+1. Copy `/Applications/Duckov.app` to `~/Applications/Duckov-COOP.app` (the original is not modified).
+2. Adjust entitlements on the copy: turn off App Sandbox; enable `com.apple.security.network.client` and `com.apple.security.network.server`.
+3. Sign that copy with local `codesign` identity `-`. Each player signs their own copy on their own Mac.
+4. Put this fork's co-op mod from Releases (and any dependency mods you need) in `Duckov-COOP.app/Contents/Mods/`.
+5. **Launch only** `Duckov-COOP.app` for co-op. Every peer must use the exact same ModVersion string (one shared version for Windows and Mac, for example `1.4.2` from Releases).
 
----
+### Notes
 
-## 🛠️ Build Guide
+- Do not install Mods into the original `/Applications/Duckov.app`.
+- Steam "Verify integrity" can restore the original. If the copy misbehaves, run the script again.
+- An Apple Developer account is not required.
+- If the destination already exists, the script asks before replacing it. Pass `--force` to replace without asking. A re-run keeps Mods already in the copy, then signs again after the refresh.
 
-### Prerequisites
+License: [LICENSE.txt](LICENSE.txt)
 
-- Visual Studio 2019 or later
-- .NET Framework 4.8
-- Escape From Duckov game installed
-
-### Step 1: Configure Environment Variables
-
-Before building for the first time, you need to set up the game path environment variable.
-
-#### Method 1: Use Automatic Configuration Script (Recommended)
-
-1. Locate the `SetEnvVars_Permanent.bat` file in the project root directory
-2. Double-click to run the script
-3. Enter your game folder path when prompted
-
-   **Example path**:
-   ```
-   C:\Steam\steamapps\common\Escape from Duckov
-   ```
-
-4. The script will automatically set the `DUCKOV_GAME_DIRECTORY` environment variable
-5. **Important**: Close Visual Studio completely and reopen it to load the new environment variable
-
-#### Method 2: Manual Configuration
-
-1. Right-click "This PC" → "Properties" → "Advanced system settings" → "Environment Variables"
-2. Under "User variables", click "New"
-3. Variable name: `DUCKOV_GAME_DIRECTORY`
-4. Variable value: Full path to your game's Managed folder
-5. Click "OK" to save
-
-### Step 2: Prepare Dependencies
-
-Ensure the following DLL files are in the `Shared` folder:
-- `0Harmony.dll`
-- `LiteNetLib.dll`
-
-### Step 3: Build the Project
-
-1. Open `EscapeFromDuckovCoopMod.sln` solution
-2. Select `Release` configuration
-3. Right-click the solution → "Build Solution"
-
-After successful compilation, output files will be in the `EscapeFromDuckovCoopMod/bin/Release/` directory.
-
-### Troubleshooting
-
-**Q: Build fails with missing DLL references?**
-
-A: Make sure you have correctly set the `DUCKOV_GAME_DIRECTORY` environment variable and restarted Visual Studio.
-
-**Q: Environment variable not working after setting?**
-
-A: 
-1. Verify the variable is set by running `echo %DUCKOV_GAME_DIRECTORY%` in command prompt
-2. Ensure Visual Studio is completely closed (including background processes) before reopening
-
-**Q: What if my path contains spaces or special characters?**
-
-A: The script supports paths with spaces and parentheses, such as `Program Files (x86)`. Simply enter the complete path as-is.
-
----
-
-## 🎯 Features
-
-### Core Features
-- ✅ Player position, actions, and equipment synchronization
-- ✅ AI enemy state synchronization
-- ✅ Loot box synchronization
-- ✅ Door and destructible object synchronization
-- ✅ Throwable items (grenades, etc.) synchronization
-- ✅ Damage calculation and synchronization
-- ✅ Death spectator mode
-
-### Network Features
-- 🌐 LAN multiplayer support
-- 🌐 Internet multiplayer support
-- ⚡ Optimized network performance
-- 🔄 Automatic reconnection
-
----
-
-## 💡 Credits
-
-Special thanks to the following contributors:
-
-- **Neko17** - Core development
-- **Prototype-alpha** - Feature development and optimization
-- **All debug and testing participants**
-
-Thanks to the following open source projects:
-
-- [HarmonyLib](https://github.com/pardeike/Harmony) - Runtime code patching framework
-- [LiteNetLib](https://github.com/RevenantX/LiteNetLib) - UDP networking library
-
----
-
-## 📄 License
-
-This project is released under a **modified AGPL-3.0 License**.
-
-All derived works must comply with the following terms:
-
-- ❌ **No commercial use allowed**
-- ❌ **No closed-source server deployment**
-- ✅ **Attribution required**
-
-For details, see:
-- [LICENSE.txt](LICENSE.txt) - Full license text
-- [LICENSE_RESTRICTIONS.txt](LICENSE_RESTRICTIONS.txt) - Additional restrictions
-
----
-
-## 📞 Contact & Feedback
-
-Feel free to report bugs or share suggestions through [Issues](../../issues) or [Discussions](../../discussions).
-
-The mod is now available as a stable release, and community contributions are always appreciated!
-
----
-
-## 🗺️ Roadmap
-
-- [ ] More game mechanics synchronization
-- [ ] Performance optimization
-- [ ] Better error handling
-- [ ] Comprehensive documentation
-
----
-
-**⭐ If this project helps you, please give us a Star!**
-
+Thanks to the original authors. The upstream project is https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
+Please support their work and follow the applicable rules.
