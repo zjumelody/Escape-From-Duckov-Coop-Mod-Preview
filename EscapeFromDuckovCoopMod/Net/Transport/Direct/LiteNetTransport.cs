@@ -23,6 +23,14 @@ internal sealed class LiteNetTransport : CoopNetworkManager, INetEventListener
     public override int LocalPort => _manager.LocalPort;
     public override IReadOnlyList<CoopPeer> ConnectedPeerList => _connected;
     public override NetStatistics Statistics => _manager.Statistics;
+    // macOS App Sandbox 会拒绝这个 UDP 绑定以及后续广播/直连（LiteNetLib）。
+    // 独立 Mac 版必须关闭沙盒（nosandbox）并具备 network.client + network.server entitlement。
+    // 模组 DLL 自己改不了宿主签名，说明见 README_MAC.md。Windows 不走沙盒，行为不变。
+    //
+    // The macOS App Sandbox denies this UDP bind and later broadcast/direct connect (LiteNetLib).
+    // A standalone Mac build needs the sandbox off (nosandbox) plus network.client and network.server
+    // entitlements. The mod DLL cannot re-sign the host app; see README_MAC.md.
+    // Windows is not sandboxed; behavior there is unchanged.
     public override bool Start(int port = 0) => _manager.Start(port);
     public override void Stop()
     {

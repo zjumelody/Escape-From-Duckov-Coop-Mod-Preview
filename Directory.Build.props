@@ -1,9 +1,22 @@
 <Project>
+    <!--
+      Mac / MSBuild：路径一律用正斜杠。游戏目录为空时不要调用 Exists('')，
+      部分 SDK 会把空路径当成当前目录，从而引用到错误的 Managed。
+      DUCKOV_GAME_MANAGED 可以单独设置，方便 Mac .app 的 Contents/Resources/Data/Managed 布局。
+      LangVersion=preview 与本树在 Mac 工具链上的编译方式一致。
+
+      Mac / MSBuild: always use forward slashes. Do not call Exists('') when the game
+      directory is unset — some SDKs treat an empty path as the current directory and
+      then resolve the wrong Managed folder.
+      DUCKOV_GAME_MANAGED may be set on its own for a Mac .app Managed layout.
+      LangVersion=preview matches how this tree is compiled on the Mac toolchain.
+    -->
     <PropertyGroup>
-        <GameDirectory Condition="Exists('$(DUCKOV_GAME_DIRECTORY)')">$(DUCKOV_GAME_DIRECTORY)</GameDirectory>
-        <DUCKOV_DATA_DIRECTORY>$(GameDirectory)\Duckov_Data</DUCKOV_DATA_DIRECTORY>
-        <DUCKOV_MODS_DIRECTORY>$(DUCKOV_DATA_DIRECTORY)\Mods</DUCKOV_MODS_DIRECTORY>
-        <DUCKOV_GAME_MANAGED>$(DUCKOV_DATA_DIRECTORY)\Managed</DUCKOV_GAME_MANAGED>
+        <LangVersion>preview</LangVersion>
+        <GameDirectory Condition="'$(DUCKOV_GAME_DIRECTORY)' != '' and Exists('$(DUCKOV_GAME_DIRECTORY)')">$(DUCKOV_GAME_DIRECTORY)</GameDirectory>
+        <DUCKOV_DATA_DIRECTORY Condition="'$(GameDirectory)' != ''">$(GameDirectory)/Duckov_Data</DUCKOV_DATA_DIRECTORY>
+        <DUCKOV_MODS_DIRECTORY Condition="'$(DUCKOV_DATA_DIRECTORY)' != ''">$(DUCKOV_DATA_DIRECTORY)/Mods</DUCKOV_MODS_DIRECTORY>
+        <DUCKOV_GAME_MANAGED Condition="'$(DUCKOV_GAME_MANAGED)' == '' and '$(DUCKOV_DATA_DIRECTORY)' != ''">$(DUCKOV_DATA_DIRECTORY)/Managed</DUCKOV_GAME_MANAGED>
     </PropertyGroup>
 
     <ItemDefinitionGroup>

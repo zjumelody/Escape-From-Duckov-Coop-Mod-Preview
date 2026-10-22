@@ -24,6 +24,27 @@ internal static class Patch_CharacterInputControl_Update_ChatBlock
 {
     private static bool _forcedDisable;
 
+    /// <summary>
+    /// 场景/关卡切换时，如果聊天焦点闪了一下，MainPlayerInput 会停在禁用状态。
+    /// MacLocalInputUnlock 在 LevelInited 之后调用这里把它拉回来。
+    ///
+    /// Scene/level transitions can leave MainPlayerInput disabled if chat focus
+    /// flickered during load. MacLocalInputUnlock calls this after LevelInited.
+    /// </summary>
+    internal static void ResetForceDisable()
+    {
+        _forcedDisable = false;
+        try
+        {
+            var playerInput = GameManager.MainPlayerInput;
+            if (playerInput != null && !playerInput.enabled)
+                playerInput.enabled = true;
+        }
+        catch
+        {
+        }
+    }
+
     private static bool Prefix()
     {
         var typing = MModUI.Instance != null && MModUI.Instance.IsChatTyping();

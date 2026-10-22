@@ -4,7 +4,7 @@
 
 **让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
-[![Version](https://img.shields.io/badge/Version-1.4.1-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+[![Version](https://img.shields.io/badge/Version-1.4.2-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
 [![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
@@ -18,8 +18,10 @@
 
 </div>
 
+> macOS / Apple Silicon 的编译、安装、沙盒网络授权和联机版本对照见 **[README_MAC.md](README_MAC.md)**。本 fork 的托管 DLL 为 Windows 与 Mac 共用，`BuildInfo.ModVersion` 为 **1.4.2**，任意系统的联机端都必须使用完全相同的字符串。变更记录见 [MAC_ARM64_CHANGELOG.md](MAC_ARM64_CHANGELOG.md)。
+
 > [!IMPORTANT]
-> 当前版本为 **v1.4.1**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
+> 当前版本为 **v1.4.2**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。Windows 与 Mac 共用这一字符串，详见 [README_MAC.md](README_MAC.md)。
 
 ## 📖 项目简介
 
@@ -27,7 +29,7 @@
 
 | 项目 | 当前信息 |
 | --- | --- |
-| 模组版本 | **v1.4.1** |
+| 模组版本 | **v1.4.2**（Windows / Mac 共用，见 [README_MAC.md](README_MAC.md)） |
 | 发布状态 | **正式版** |
 | 发布渠道 | [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) |
 | 创意工坊 ID | `3591341282` |
