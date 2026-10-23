@@ -23,6 +23,7 @@ var modsField = null;
 var logView = null;
 var statusField = null;
 var prepareButton = null;
+var prepareFill = null;
 var downloadButton = null;
 var releasesButton = null;
 var chooseSourceButton = null;
@@ -241,6 +242,7 @@ function setBusy(flag) {
   if (sourceField) sourceField.setEditable(enabled);
   if (destField) destField.setEditable(enabled);
   if (modsField) modsField.setEditable(enabled);
+  paintPrepareButton(enabled);
 }
 
 function showAlert(title, info) {
@@ -335,12 +337,12 @@ function introText() {
     '',
     '1. 确认原版 Duckov.app。默认 /Applications/Duckov.app。',
     '   Confirm the original Duckov.app. Default: /Applications/Duckov.app.',
-    '2. 副本默认在用户目录的 Applications/Duckov-COOP.app。原版不会被修改。',
-    '   The copy defaults to ~/Applications/Duckov-COOP.app. The original app is not modified.',
-    '3. 可选：选择已解压的 Mods 文件夹，或下载最新测试 Mod。',
-    '   Optional: choose an unzipped Mods folder, or download the latest test mod.',
-    '4. 点击「准备联机副本 / Prepare co-op copy」。复制游戏时可能需要几分钟。',
-    '   Click Prepare co-op copy. Copying the game can take several minutes.',
+    '2. 指定要保存游戏副本的位置。默认是 ~/Applications/Duckov-COOP.app。今后要联机则打开这个副本。原版不会被修改。',
+    '   Choose where the co-op copy is saved. Default: ~/Applications/Duckov-COOP.app. Launch this copy for co-op. The original app is not modified.',
+    '3. 可选：在 Mods 区域选择已解压的 Mods 文件夹，或下载最新测试 Mod。留空也可以。',
+    '   Optional: in the Mods section, choose an unzipped Mods folder, or download the latest test mod. Empty is fine.',
+    '4. 点击窗口最下方的「准备联机副本 / Prepare co-op copy」。复制游戏时可能需要几分钟。',
+    '   Click Prepare co-op copy at the bottom of the window. Copying the game can take several minutes.',
     '',
     '若系统提示无法验证开发者：按住 Control 点按本应用，选择「打开」。只需一次。',
     '若菜单里没有「打开」，到「系统设置 → 隐私与安全性」里点「仍要打开」。',
@@ -694,7 +696,7 @@ function chooseDestPath() {
   panel.setCanCreateDirectories(true);
   panel.setNameFieldStringValue($('Duckov-COOP.app'));
   panel.setPrompt($('选择 / Choose'));
-  panel.setMessage($('选择副本的保存位置。文件名应以 .app 结尾。\nChoose where to save the copy. The name should end with .app.'));
+  panel.setMessage($('指定要保存游戏副本的位置。今后要联机则打开这个副本。文件名应以 .app 结尾。\nChoose where to save the co-op copy. Launch this copy for co-op. The name should end with .app.'));
   var apps = joinPath(homeDir(), 'Applications');
   if (fileExists(apps)) panel.setDirectoryURL($.NSURL.fileURLWithPath($(apps)));
   if (asNumber(panel.runModal) !== 1) return '';
@@ -789,6 +791,59 @@ function installMenu(app) {
   menu.setSubmenuForItem(appMenu, appItem);
 }
 
+function secondaryTextColor() {
+  try {
+    var color = objc($.NSColor.secondaryLabelColor);
+    if (color) return color;
+  } catch (e) {}
+  return rgb(0.35, 0.35, 0.35);
+}
+
+function attributedTitle(title, font, color, underline, align) {
+  var text = String(title);
+  var str = objc($.NSMutableAttributedString.alloc).initWithString($(text));
+  if (!str) throw new Error('attributed string');
+  var range = $.NSMakeRange(0, text.length);
+  if (font) str.addAttributeValueRange($.NSFontAttributeName, font, range);
+  if (color) str.addAttributeValueRange($.NSForegroundColorAttributeName, color, range);
+  if (underline) str.addAttributeValueRange($.NSUnderlineStyleAttributeName, $(1), range);
+  if (align != null) {
+    var style = objc(objc($.NSMutableParagraphStyle.alloc).init);
+    style.setAlignment(align);
+    str.addAttributeValueRange($.NSParagraphStyleAttributeName, style, range);
+  }
+  return str;
+}
+
+function paintLayer(view, r, g, b, radius) {
+  try {
+    view.setWantsLayer(true);
+    var layer = objc(view.layer);
+    if (!layer) return false;
+    layer.setBackgroundColor($.CGColorCreateGenericRGB(r, g, b, 1));
+    if (radius != null) layer.setCornerRadius(radius);
+    try { layer.setMasksToBounds(true); } catch (e) {}
+    return true;
+  } catch (e2) {
+    return false;
+  }
+}
+
+function paintPrepareButton(enabled) {
+  var title = '准备联机副本 / Prepare co-op copy';
+  var r = enabled ? 0.10 : 0.45;
+  var g = enabled ? 0.38 : 0.49;
+  var b = enabled ? 0.78 : 0.54;
+  if (prepareFill) {
+    try { prepareFill.setFillColor(rgb(r, g, b)); } catch (e) {}
+  }
+  if (!prepareButton) return;
+  paintLayer(prepareButton, r, g, b, 8);
+  try {
+    prepareButton.setAttributedTitle(attributedTitle(title, $.NSFont.boldSystemFontOfSize(16), $.NSColor.whiteColor, false, 2));
+  } catch (e2) {}
+}
+
 function makeLabel(text, x, y, w, h, size, bold) {
   var label = objc($.NSTextField.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
   label.setStringValue($(text));
@@ -830,6 +885,87 @@ function makeButton(title, x, y, w, h, action) {
   button.setTarget(controller);
   button.setAction(action);
   return button;
+}
+
+function makeLinkButton(title, x, y, w, h, action) {
+  var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+  button.setBezelStyle(15);
+  button.setBordered(false);
+  button.setFont($.NSFont.systemFontOfSize(12));
+  button.setAlignment(0);
+  button.setTarget(controller);
+  button.setAction(action);
+  try { button.setFocusRingType(1); } catch (e) {}
+  var color = rgb(0.05, 0.38, 0.82);
+  try {
+    var link = objc($.NSColor.linkColor);
+    if (link) color = link;
+  } catch (e2) {}
+  try {
+    button.setAttributedTitle(attributedTitle(title, $.NSFont.systemFontOfSize(12), color, true, 0));
+  } catch (e3) {
+    button.setTitle($(title));
+    try { button.setContentTintColor(color); } catch (e4) {}
+  }
+  return button;
+}
+
+function makeSectionBox(title, x, y, w, h) {
+  var box = objc($.NSBox.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+  box.setTitle($(title));
+  box.setTitlePosition(2);
+  try { box.setTitleFont($.NSFont.boldSystemFontOfSize(13)); } catch (e) {}
+  try {
+    box.setBoxType(4);
+    box.setBorderType(1);
+    box.setBorderWidth(1);
+    box.setCornerRadius(8);
+    var fill = objc($.NSColor.controlBackgroundColor);
+    if (fill) box.setFillColor(fill);
+    var border = objc($.NSColor.separatorColor);
+    if (border) box.setBorderColor(border);
+    box.setTransparent(false);
+  } catch (e2) {
+    box.setBoxType(0);
+    box.setBorderType(2);
+  }
+  return box;
+}
+
+function makePrimaryButton(title, x, y, w, h, action) {
+  var fill = null;
+  try {
+    fill = objc($.NSBox.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+    fill.setTitle($(''));
+    fill.setTitlePosition(0);
+    fill.setBoxType(4);
+    fill.setBorderType(0);
+    fill.setBorderWidth(0);
+    fill.setCornerRadius(8);
+    fill.setFillColor(rgb(0.10, 0.38, 0.78));
+    fill.setTransparent(false);
+  } catch (e) {
+    fill = null;
+  }
+  var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+  button.setTitle($(title));
+  button.setFont($.NSFont.boldSystemFontOfSize(16));
+  button.setBordered(false);
+  button.setAlignment(2);
+  button.setTarget(controller);
+  button.setAction(action);
+  try { button.setKeyEquivalent($('\r')); } catch (e2) {}
+  try { button.setFocusRingType(1); } catch (e3) {}
+  try {
+    var cell = objc(button.cell);
+    cell.setBordered(false);
+    cell.setBackgroundColor(objc($.NSColor.clearColor));
+  } catch (e4) {}
+  try {
+    button.setAttributedTitle(attributedTitle(title, $.NSFont.boldSystemFontOfSize(16), $.NSColor.whiteColor, false, 2));
+  } catch (e5) {}
+  try { button.setBezelColor(rgb(0.10, 0.38, 0.78)); } catch (e6) {}
+  return { fill: fill, button: button };
 }
 
 function registerController() {
@@ -886,11 +1022,16 @@ function registerController() {
 }
 
 function buildInterface(app) {
-  var windowWidth = 760;
-  var windowHeight = 720;
+  var windowWidth = 780;
+  var windowHeight = 768;
   var margin = 20;
   var inner = windowWidth - margin * 2;
-  function yTop(top, h) { return windowHeight - top - h; }
+  var cursor = 12;
+  function row(h, gap) {
+    var y = windowHeight - cursor - h;
+    cursor += h + gap;
+    return y;
+  }
 
   mainWindow = objc($.NSWindow.alloc).initWithContentRectStyleMaskBackingDefer(
     $.NSMakeRect(0, 0, windowWidth, windowHeight),
@@ -903,52 +1044,102 @@ function buildInterface(app) {
   mainWindow.setReleasedWhenClosed(false);
   var content = objc(mainWindow.contentView);
 
-  content.addSubview(makeLabel('准备联机副本 / Prepare co-op copy', margin, yTop(16, 26), inner, 26, 18, true));
+  content.addSubview(makeLabel('准备联机副本 / Prepare co-op copy', margin, row(26, 4), inner, 26, 18, true));
   content.addSubview(makeWrappingLabel(
     '复制官方 Duckov.app，只改副本：关闭 App Sandbox，加入联网权限，并用本机 codesign 身份 "-" 重新签名。\nCopy the official Duckov.app and change only the copy: turn off App Sandbox, add network access, and re-sign with the local codesign identity "-".',
-    margin, yTop(46, 52), inner, 52, 12
+    margin, row(50, 8), inner, 50, 12
   ));
 
-  content.addSubview(makeLabel('原版 App / Original app', margin, yTop(108, 18), inner, 18, 13, false));
-  sourceField = makeField('/Applications/Duckov.app', margin, yTop(128, 26), 550, 26);
-  chooseSourceButton = makeButton('选择… / Choose…', 580, yTop(128, 30), 160, 30, 'chooseSource:');
+  content.addSubview(makeLabel('原版 App / Original app', margin, row(18, 4), inner, 18, 13, false));
+  var sourceY = row(30, 10);
+  sourceField = makeField('/Applications/Duckov.app', margin, sourceY + 2, inner - 168, 26);
+  chooseSourceButton = makeButton('选择… / Choose…', margin + inner - 156, sourceY, 156, 30, 'chooseSource:');
   content.addSubview(sourceField);
   content.addSubview(chooseSourceButton);
 
-  content.addSubview(makeLabel('副本 / Co-op copy', margin, yTop(164, 18), inner, 18, 13, false));
-  destField = makeField(joinPath(homeDir(), 'Applications/Duckov-COOP.app'), margin, yTop(184, 26), 550, 26);
-  chooseDestButton = makeButton('选择… / Choose…', 580, yTop(184, 30), 160, 30, 'chooseDest:');
+  content.addSubview(makeLabel(
+    '指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）',
+    margin, row(22, 4), inner, 22, 13, true
+  ));
+  var destEnglish = makeLabel(
+    'Where the co-op copy is saved. Launch this copy for co-op.',
+    margin, row(18, 4), inner, 18, 12, false
+  );
+  try { destEnglish.setTextColor(secondaryTextColor()); } catch (e) {}
+  content.addSubview(destEnglish);
+  var destY = row(30, 10);
+  destField = makeField(joinPath(homeDir(), 'Applications/Duckov-COOP.app'), margin, destY + 2, inner - 168, 26);
+  chooseDestButton = makeButton('选择… / Choose…', margin + inner - 156, destY, 156, 30, 'chooseDest:');
   content.addSubview(destField);
   content.addSubview(chooseDestButton);
 
-  content.addSubview(makeLabel('Mods 文件夹（可选）/ Mods folder (optional)', margin, yTop(220, 18), inner, 18, 13, false));
-  modsField = makeField('', margin, yTop(240, 26), 460, 26);
+  var titleChrome = 26;
+  var afterTitle = 8;
+  var modsLabelH = 18;
+  var modsGap1 = 6;
+  var modsRowH = 30;
+  var modsGap2 = 10;
+  var downloadH = 32;
+  var boxPadBottom = 10;
+  var boxH = titleChrome + afterTitle + modsLabelH + modsGap1 + modsRowH + modsGap2 + downloadH + boxPadBottom;
+  var boxY = windowHeight - cursor - boxH;
+  var modsBox = makeSectionBox('可选：Mods 区域 / Optional Mods', margin, boxY, inner, boxH);
+  content.addSubview(modsBox);
+  function yInBox(topOffset, h) {
+    return boxY + boxH - topOffset - h;
+  }
+  var modsLabelTop = titleChrome + afterTitle;
+  var modsLabelY = yInBox(modsLabelTop, modsLabelH);
+  var modsRowY = yInBox(modsLabelTop + modsLabelH + modsGap1, modsRowH);
+  var downloadY = yInBox(modsLabelTop + modsLabelH + modsGap1 + modsRowH + modsGap2, downloadH);
+  var boxPadX = 16;
+  var boxInnerLeft = margin + boxPadX;
+  var boxInnerW = inner - boxPadX * 2;
+  content.addSubview(makeLabel(
+    'Mods 文件夹（可选）/ Mods folder (optional)',
+    boxInnerLeft, modsLabelY, boxInnerW, modsLabelH, 13, false
+  ));
+  var chooseW = 148;
+  var clearW = 120;
+  var modsFieldW = boxInnerW - chooseW - clearW - 16;
+  modsField = makeField('', boxInnerLeft, modsRowY + 2, modsFieldW, 26);
   try {
     modsField.setPlaceholderString($('留空则不装入新的 Mod / Leave empty to skip new mods'));
-  } catch (e) {}
-  chooseModsButton = makeButton('选择… / Choose…', 490, yTop(240, 30), 120, 30, 'chooseMods:');
-  clearModsButton = makeButton('清除 / Clear', 620, yTop(240, 30), 120, 30, 'clearMods:');
+  } catch (eMods) {}
+  chooseModsButton = makeButton('选择… / Choose…', boxInnerLeft + modsFieldW + 8, modsRowY, chooseW, 30, 'chooseMods:');
+  clearModsButton = makeButton('清除 / Clear', boxInnerLeft + modsFieldW + 8 + chooseW + 8, modsRowY, clearW, 30, 'clearMods:');
+  downloadButton = makeButton(
+    '下载最新测试 Mod / Download latest test mod',
+    boxInnerLeft, downloadY, boxInnerW, downloadH, 'downloadMod:'
+  );
   content.addSubview(modsField);
   content.addSubview(chooseModsButton);
   content.addSubview(clearModsButton);
-
-  prepareButton = makeButton('准备联机副本 / Prepare co-op copy', margin, yTop(280, 34), inner, 34, 'prepare:');
-  downloadButton = makeButton('下载最新测试 Mod / Download latest test mod', margin, yTop(322, 34), inner, 34, 'downloadMod:');
-  releasesButton = makeButton('打开 Releases 页面 / Open Releases', margin, yTop(364, 34), inner, 34, 'openReleases:');
-  content.addSubview(prepareButton);
   content.addSubview(downloadButton);
+  cursor += boxH + 4;
+
+  var linkW = 340;
+  var linkY = row(24, 6);
+  releasesButton = makeLinkButton(
+    '打开 Releases 页面 / Open Releases',
+    margin + 2, linkY, linkW, 24, 'openReleases:'
+  );
   content.addSubview(releasesButton);
 
-  statusField = makeWrappingLabel('', margin, yTop(408, 36), inner, 36, 12);
+  statusField = makeWrappingLabel('', margin, row(36, 4), inner, 36, 12);
   content.addSubview(statusField);
-  content.addSubview(makeLabel('进度 / Progress', margin, yTop(450, 18), inner, 18, 13, false));
+  content.addSubview(makeLabel('进度 / Progress', margin, row(18, 4), inner, 18, 13, false));
 
-  var logY = yTop(470, 234);
-  var scroll = objc($.NSScrollView.alloc).initWithFrame($.NSMakeRect(margin, logY, inner, 234));
+  var prepareH = 50;
+  var prepareGap = 12;
+  var prepareBottom = 16;
+  var logH = windowHeight - cursor - prepareBottom - prepareH - prepareGap;
+  var logY = prepareBottom + prepareH + prepareGap;
+  var scroll = objc($.NSScrollView.alloc).initWithFrame($.NSMakeRect(margin, logY, inner, logH));
   scroll.setHasVerticalScroller(true);
   scroll.setAutohidesScrollers(true);
   scroll.setBorderType(2);
-  logView = objc($.NSTextView.alloc).initWithFrame($.NSMakeRect(0, 0, inner - 20, 234));
+  logView = objc($.NSTextView.alloc).initWithFrame($.NSMakeRect(0, 0, inner - 20, logH));
   logView.setEditable(false);
   logView.setSelectable(true);
   logView.setRichText(false);
@@ -963,6 +1154,16 @@ function buildInterface(app) {
   scroll.setDocumentView(logView);
   content.addSubview(scroll);
 
+  var primary = makePrimaryButton(
+    '准备联机副本 / Prepare co-op copy',
+    margin, prepareBottom, inner, prepareH, 'prepare:'
+  );
+  prepareFill = primary.fill;
+  prepareButton = primary.button;
+  if (prepareFill) content.addSubview(prepareFill);
+  content.addSubview(prepareButton);
+  paintPrepareButton(true);
+
   if (fileExists('/Applications/Duckov.app')) {
     setStatus('已找到默认原版 App。确认路径后点击「准备联机副本」。 / Default original app found. Confirm the paths, then click Prepare co-op copy.', null);
   } else {
@@ -972,6 +1173,7 @@ function buildInterface(app) {
   objc(mainWindow.center);
   mainWindow.makeKeyAndOrderFront(app);
   app.activateIgnoringOtherApps(true);
+  paintPrepareButton(true);
 }
 
 function startApp() {

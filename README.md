@@ -19,12 +19,12 @@
 然后在窗口里：
 
 1. 确认「原版 App」。默认是 `/Applications/Duckov.app`。游戏若在别的位置，点「选择… / Choose…」。
-2. 确认「副本」。默认是你的用户文件夹里的 `Applications/Duckov-COOP.app`（也就是 `~/Applications/Duckov-COOP.app`）。
+2. 确认「指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）」。默认是你的用户文件夹里的 `Applications/Duckov-COOP.app`（也就是 `~/Applications/Duckov-COOP.app`）。今后要联机，打开的是这个副本。
 3. 需要联机 Mod 时，任选一种：
    - 点「下载最新测试 Mod / Download latest test mod」，等 Mods 路径自动填上；或
    - 点 Mods 旁边的「选择… / Choose…」，选已经解压好的 Mods 文件夹。
    - 只想先做出副本、以后再装 Mod：Mods 留空。
-4. 点 **「准备联机副本 / Prepare co-op copy」**。副本已经存在时，会先问你要不要替换；已经装在副本里的 Mods 会保留。复制整份游戏可能要几分钟，这段时间不要关窗口。
+4. 点窗口最下方的 **「准备联机副本 / Prepare co-op copy」**。副本已经存在时，会先问你要不要替换；已经装在副本里的 Mods 会保留。复制整份游戏可能要几分钟，这段时间不要关窗口。
 5. 看到「完成 / Done」之后，**只启动** `Duckov-COOP.app` 进行联机。
 
 按钮含义：
@@ -35,7 +35,7 @@
 - **选择… / Choose…**：挑选原版 App、副本保存位置，或已经解压的 Mods 文件夹。
 - **清除 / Clear**：清空 Mods 路径。这一次准备就不装入新的 Mod。
 
-窗口下方会滚动显示进度。成功和失败都有中文和英文说明。原版 `Duckov.app` 不会被修改。
+进度在窗口中下部滚动显示。Mods 在标为可选的区域里，可以先留空。「准备联机副本」是最下方的大按钮。「打开 Releases 页面」是旁边的小链接。成功和失败都有中文和英文说明。原版 `Duckov.app` 不会被修改。
 
 ### 高级：终端脚本
 
