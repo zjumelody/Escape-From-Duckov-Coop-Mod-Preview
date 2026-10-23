@@ -21,7 +21,7 @@
 
 然后在窗口里：
 
-1. 确认「原版 App」。默认是 `/Applications/Duckov.app`。游戏若在别的位置，点「选择… / Choose…」。
+1. 确认「指定原版游戏 App 的位置（现有已经安装的游戏位置可在 steam 里查看）」。默认是 `/Applications/Duckov.app`。已安装的位置可以在 Steam 里查看。若不在默认位置，点「选择… / Choose…」。
 2. 确认「指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）」。默认是你的用户文件夹里的 `Applications/Duckov-COOP.app`（也就是 `~/Applications/Duckov-COOP.app`）。今后要联机，打开的是这个副本。
 3. 需要联机 Mod 时，任选一种：
    - 点「下载最新测试 Mod / Download latest test mod」，等 Mods 路径自动填上；或
@@ -45,7 +45,7 @@
 
 原版开着 App Sandbox，配置在 `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`（位置1 / 原版沙盒配置）。联机副本关掉沙盒，配置在 `~/Library/Application Support/com.bilibili.duckov`（位置2 / 联机副本配置）。Bundle ID 相同，差别来自沙盒开关，不是 `.app` 放在哪。同步前请退出两边的游戏；目标里多出来的文件会被删掉。若读取位置1时出现 Operation not permitted，请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里加入 `DuckovCoopPrepare.app` 后再试。
 
-进度在窗口中下部滚动显示。Mods、配置与存档各在一个标为可选的区域里。「准备联机副本」仍是最下方的大按钮。「打开 Releases 页面」是旁边的小链接。成功和失败都有中文和英文说明。准备副本不会修改原版 `Duckov.app`。
+进度在窗口中下部滚动显示。Mods、配置与存档各在一个标为可选的区域里。「准备联机副本」是窗口最下方居中的蓝色按钮。「打开 Releases 页面」在窗口内容区右上角，是一颗灰色按钮。成功和失败都有中文和英文说明。准备副本不会修改原版 `Duckov.app`。
 
 ### 高级：终端脚本
 

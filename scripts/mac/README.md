@@ -33,9 +33,9 @@ If macOS says the developer cannot be verified, Control-click the app and choose
 
 The original app keeps App Sandbox, so config is Location 1: `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`. The co-op copy has App Sandbox off, so config is Location 2: `~/Library/Application Support/com.bilibili.duckov`. The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. If reading Location 1 prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access.
 
-窗口里：原版和副本路径在上方；Mods 在标为可选的方框里；配置与存档在另一个可选方框里；「打开 Releases 页面」是小链接；「准备联机副本」是最下方的大按钮。
+窗口里：原版和副本路径在上方；Mods 与配置/存档是两个可选方框，中间留白较紧；「打开 Releases 页面」在右上角，是一颗灰色按钮；「准备联机副本」是最下方居中的蓝色按钮。
 
-In the window: the original app and the copy path are at the top; Mods sit in a box marked optional; config and saves sit in a second optional box; Open Releases is a small link; Prepare co-op copy is the large button at the bottom.
+In the window: the original app and the copy path are at the top; Mods and config/saves are two optional boxes with a tight gap; Open Releases is a gray button at the top-right; Prepare co-op copy is a centered blue button at the bottom.
 
 ## 文件 / Files
 
