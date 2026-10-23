@@ -99,4 +99,28 @@ assert.strictEqual(
   false
 );
 
+assert.strictEqual(matcher.versionsSame('V1.4.2-test', '1.4.2-test'), true);
+assert.strictEqual(matcher.versionsSame('1.4.2', '1.4.2-test'), false);
+assert.strictEqual(matcher.versionsSame('', ''), false);
+assert.strictEqual(matcher.versionsSame('-', '1.4.2'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2', '1.4.1'), true);
+assert.strictEqual(matcher.versionIsNewer('1.4.1', '1.4.2'), false);
+assert.strictEqual(matcher.versionIsNewer('1.10.0', '1.9.9'), true);
+assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.1'), true);
+assert.strictEqual(matcher.versionIsNewer('1.4.2', '1.4.2-test'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.2'), false);
+assert.deepStrictEqual(matcher.versionParts('V1.10.2-test'), [1, 10, 2]);
+
+assert.strictEqual(matcher.downloadButtonState([], '1.4.2-test', true), 'idle');
+assert.strictEqual(matcher.downloadButtonState(null, '1.4.2-test', true), 'idle');
+assert.strictEqual(matcher.downloadButtonState(['1.4.1'], '1.4.2-test', false), 'idle');
+assert.strictEqual(matcher.downloadButtonState(['1.4.2-test'], '1.4.2-test', true), 'ready');
+assert.strictEqual(matcher.downloadButtonState(['V1.4.2-test'], '1.4.2-test', true), 'ready');
+assert.strictEqual(matcher.downloadButtonState(['1.4.1'], '1.4.2-test', true), 'outdated');
+assert.strictEqual(matcher.downloadButtonState(['1.4.2'], '1.4.2-test', true), 'outdated');
+assert.strictEqual(matcher.downloadButtonState(['1.4.3'], '1.4.2-test', true), 'ready');
+assert.strictEqual(matcher.downloadButtonState(['1.4.1', '1.4.2-test'], '1.4.2-test', true), 'ready');
+assert.strictEqual(matcher.downloadButtonState(['-'], '1.4.2-test', true), 'outdated');
+assert.strictEqual(matcher.downloadButtonState(['1.4.2-test'], '', true), 'idle');
+
 console.log('release-match tests passed');

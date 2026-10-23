@@ -55,6 +55,70 @@ function releaseAssetVersionLabel(name, tag) {
   return versionFromTag(tag);
 }
 
+// Same rules as prepare-duckov-coop-app.sh normalize_version_label / version_parts /
+// versions_same / version_is_newer. The numeric triple decides "newer". The suffix
+// stays part of the label, so 1.4.2 and 1.4.2-test are not the same package.
+function normalizeVersionLabel(text) {
+  var value = String(text == null ? '' : text).toLowerCase().replace(/[ \t]/g, '');
+  if (value.charAt(0) === 'v') value = value.substring(1);
+  if (!value || value === '-' || value === '?' || value === 'unknown') return '';
+  return value;
+}
+
+function versionPartNumber(text) {
+  var digits = String(text || '').replace(/[^0-9]/g, '');
+  if (!digits) return 0;
+  var n = parseInt(digits, 10);
+  if (!isFinite(n)) return 0;
+  return n;
+}
+
+function versionParts(text) {
+  var v = normalizeVersionLabel(text);
+  var num = v.split(/[-_+]/)[0];
+  var bits = num.split('.');
+  return [
+    versionPartNumber(bits[0]),
+    versionPartNumber(bits[1]),
+    versionPartNumber(bits[2])
+  ];
+}
+
+function versionsSame(a, b) {
+  var left = normalizeVersionLabel(a);
+  var right = normalizeVersionLabel(b);
+  return !!left && left === right;
+}
+
+function versionIsNewer(left, right) {
+  var a = versionParts(left);
+  var b = versionParts(right);
+  var i;
+  for (i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+// idle: nothing installed (blue). ready: installed label matches the release, or every
+// installed label is numerically newer (green, do not download an older zip).
+// outdated: a local mod exists and it is not that release (yellow).
+// remoteKnown false keeps idle so the button is not painted green or yellow before the check.
+function downloadButtonState(localVersions, remoteVersion, remoteKnown) {
+  if (!localVersions || typeof localVersions.length !== 'number' || localVersions.length === 0) return 'idle';
+  if (!remoteKnown) return 'idle';
+  var remote = normalizeVersionLabel(remoteVersion);
+  if (!remote) return 'idle';
+  var i;
+  var allNewer = true;
+  for (i = 0; i < localVersions.length; i++) {
+    if (versionsSame(localVersions[i], remoteVersion)) return 'ready';
+    if (!versionIsNewer(localVersions[i], remoteVersion)) allNewer = false;
+  }
+  if (allNewer) return 'ready';
+  return 'outdated';
+}
+
 function selectCoopModAsset(releases) {
   var i;
   var j;
@@ -94,4 +158,9 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports.releaseAssetVersionLabel = releaseAssetVersionLabel;
   module.exports.versionFromAssetName = versionFromAssetName;
   module.exports.versionFromTag = versionFromTag;
+  module.exports.normalizeVersionLabel = normalizeVersionLabel;
+  module.exports.versionParts = versionParts;
+  module.exports.versionsSame = versionsSame;
+  module.exports.versionIsNewer = versionIsNewer;
+  module.exports.downloadButtonState = downloadButtonState;
 }
