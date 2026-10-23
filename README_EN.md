@@ -19,12 +19,12 @@ The official / Steam `Duckov.app` uses App Sandbox and does not include the netw
 In the window:
 
 1. Confirm the original app. The default is `/Applications/Duckov.app`. If the game is somewhere else, click Choose.
-2. Confirm the copy. The default is `Applications/Duckov-COOP.app` inside your home folder (`~/Applications/Duckov-COOP.app`).
+2. Confirm where the co-op copy is saved (launch this copy for co-op). The default is `Applications/Duckov-COOP.app` inside your home folder (`~/Applications/Duckov-COOP.app`).
 3. To include the co-op mod, do one of these:
    - Click **Download latest test mod** and wait until the Mods path fills in; or
    - Click Choose next to Mods and select an unzipped Mods folder.
    - Leave Mods empty if you only want the copy prepared and will add Mods later.
-4. Click **Prepare co-op copy**. If the copy already exists, the helper asks before replacing it. Mods already inside the copy are kept. Copying the whole game can take several minutes; leave the window open.
+4. Click **Prepare co-op copy** at the bottom of the window. If the copy already exists, the helper asks before replacing it. Mods already inside the copy are kept. Copying the whole game can take several minutes; leave the window open.
 5. When you see **Done**, **launch only** `Duckov-COOP.app` for co-op.
 
 What the buttons do:
@@ -35,7 +35,7 @@ What the buttons do:
 - **Choose**: pick the original app, the place to save the copy, or an unzipped Mods folder.
 - **Clear**: clears the Mods path so this run does not install new mods.
 
-Progress scrolls in the text area. Success and failure messages are in Chinese and English. The original `Duckov.app` is not modified.
+Progress scrolls in the text area in the lower part of the window. Mods are in a section marked optional and can be left empty. Prepare co-op copy is the large button at the bottom. Open Releases is a small link beside the Mods section. Success and failure messages are in Chinese and English. The original `Duckov.app` is not modified.
 
 ### Advanced: Terminal script
 

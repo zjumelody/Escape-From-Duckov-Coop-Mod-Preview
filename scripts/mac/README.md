@@ -24,6 +24,10 @@ If macOS says the developer cannot be verified, Control-click the app and choose
 | 下载最新测试 Mod / Download latest test mod | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布），解压后填入 Mods 路径 |
 | 打开 Releases 页面 / Open Releases | 在浏览器打开 Releases |
 
+窗口里：原版和副本路径在上方；Mods 在标为可选的方框里；「打开 Releases 页面」是方框旁的小链接；「准备联机副本」是最下方的大按钮。
+
+In the window: the original app and the copy path are at the top; Mods sit in a box marked optional; Open Releases is a small link beside that box; Prepare co-op copy is the large button at the bottom.
+
 ## 文件 / Files
 
 - [`gui/main.js`](gui/main.js) — 窗口界面 / the window
