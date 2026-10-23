@@ -9,6 +9,10 @@
 # the local codesign identity "-". The original app is not modified. Mods go
 # into the copy only.
 #
+# 推荐路径是图形工具 DuckovCoopPrepare.app。本脚本是高级备用。
+# The recommended path is the graphical helper DuckovCoopPrepare.app.
+# This script is the advanced fallback.
+#
 # 路径 / Path: scripts/mac/prepare-duckov-coop-app.sh
 # Entitlements: scripts/mac/duckov-coop.entitlements（同目录缺失时脚本会临时生成同样内容）
 #               (if that file is not beside the script, the same plist is written to a temp file)
@@ -34,9 +38,14 @@ usage() {
 用法 / Usage:
   prepare-duckov-coop-app.sh [--source APP] [--dest APP] [--mods-dir DIR] [--force]
 
-把正版 Duckov.app 复制到可写位置，只改副本的 entitlements，并用本机 codesign 身份 "-" 重新签名。
+把官方 Duckov.app 复制到可写位置，只改副本的 entitlements，并用本机 codesign 身份 "-" 重新签名。
 Copy an official Duckov.app to a writable location, adjust entitlements on the copy only,
 and re-sign that copy with the local codesign identity "-".
+
+推荐 / Recommended:
+  图形工具 DuckovCoopPrepare.app（Release 附件 DuckovCoopPrepare-mac.zip）。
+  The graphical app DuckovCoopPrepare.app (Release asset DuckovCoopPrepare-mac.zip).
+  本脚本是高级备用方式。 / This script is the advanced fallback.
 
 默认 / Defaults:
   --source   /Applications/Duckov.app
@@ -54,6 +63,8 @@ and re-sign that copy with the local codesign identity "-".
   DEST 或 DUCKOV_DEST
   MODS_DIR 或 DUCKOV_MODS_DIR
   FORCE=1
+  DUCKOV_GUI_LOG  若设置，进度会同时追加写入该文件（供图形工具显示）
+                  When set, progress is also appended to this file for the graphical helper
 
 未指定 --mods-dir 时，若脚本旁边（或当前目录）有较新的
 EscapeFromDuckovCoopMod*.zip / *Duckov*Coop*.zip，会自动装入副本。
@@ -71,13 +82,20 @@ Every peer must use the exact same ModVersion string.
 EOF
 }
 
+gui_log() {
+  [[ -n "${DUCKOV_GUI_LOG:-}" ]] || return 0
+  printf '%s\n' "$@" >>"$DUCKOV_GUI_LOG" || true
+}
+
 die() {
   printf '%s\n' "$@" >&2
+  gui_log "$@"
   exit 1
 }
 
 note() {
   printf '%s\n' "$@"
+  gui_log "$@"
 }
 
 expand_tilde() {
@@ -558,8 +576,32 @@ main() {
   note \
     "正在用本机 codesign 身份 \"-\" 为副本签名（不使用 Apple 开发者证书）…" \
     "Signing the copy with the local codesign identity \"-\" (no Apple Developer certificate)…"
-  codesign --force --deep --sign - --entitlements "$entitlements" "$DEST"
-  if ! codesign --verify "$DEST"; then
+  signed=0
+  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
+    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
+      signed=1
+    fi
+  else
+    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST"; then
+      signed=1
+    fi
+  fi
+  if [[ "$signed" -ne 1 ]]; then
+    die \
+      "签名失败。原版未改动。可重新运行本脚本或准备工具。" \
+      "Signing failed. The original app was not modified. Run this script or the prepare helper again."
+  fi
+  verified=0
+  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
+    if codesign --verify "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
+      verified=1
+    fi
+  else
+    if codesign --verify "$DEST"; then
+      verified=1
+    fi
+  fi
+  if [[ "$verified" -ne 1 ]]; then
     die \
       "签名校验未通过。原版未改动。可重新运行本脚本。" \
       "Signature check failed. The original app was not modified. You can run this script again."
