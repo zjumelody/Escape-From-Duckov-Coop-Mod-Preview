@@ -49,6 +49,21 @@ var syncToOriginalButton = null;
 var DUCKOV_BUNDLE_ID = 'com.bilibili.duckov';
 var runningTask = null;
 var pollTimer = null;
+// Mod listing is a separate NSTask from Prepare/download. It must not run
+// synchronously during init: launch's currentTaskDictionary calls getcwd
+// when no working directory is set, and that blocks the main thread before
+// the run loop exists, so the window stays 0×0.
+var scanTask = null;
+var scanTimer = null;
+var scanToken = 0;
+var scanArmedToken = 0;
+var scanDestKey = '';
+var scanOutPath = '';
+var scanErrPath = '';
+var scanOutHandle = null;
+var scanErrHandle = null;
+var scanDeadlineMs = 0;
+var MOD_SCAN_LIMIT_MS = 15000;
 var busy = false;
 var quitting = false;
 var closing = false;
@@ -452,6 +467,40 @@ function chooseLogPath() {
   return path;
 }
 
+// Absolute directory only. Do not call getcwd() here: that is the hang.
+function taskDirectory() {
+  if (resources && fileExists(resources)) return resources;
+  var tmp = '';
+  try { tmp = String(tempDir() || ''); } catch (e) { tmp = ''; }
+  if (tmp && tmp.charAt(0) === '/' && fileExists(tmp)) return tmp;
+  return '/tmp';
+}
+
+// -[NSConcreteTask launch] builds currentTaskDictionary. When
+// currentDirectoryPath is nil, that calls getcwd() to fill PWD. getcwd()
+// goes through getattrlist and can wait on an XPC reply that only the main
+// run loop can accept. Calling it on the main thread before -[NSApplication run]
+// never receives that reply, so init sticks before makeKeyAndOrderFront and
+// the window stays 0×0. Pin an absolute directory and PWD first so launch
+// does not call getcwd. Isolated NSTask tests from Terminal do not hit this,
+// because they are not inside AppKit startup.
+function attachTaskEnvironment(task, extra) {
+  var dir = taskDirectory();
+  var info = objc($.NSProcessInfo.processInfo);
+  var env = objc(objc(info.environment).mutableCopy);
+  try { env.setObjectForKey($(dir), $('PWD')); } catch (ePwd) {}
+  if (extra) {
+    var keys = Object.keys(extra);
+    var i;
+    for (i = 0; i < keys.length; i++) {
+      if (extra[keys[i]] == null) continue;
+      env.setObjectForKey($(String(extra[keys[i]])), $(String(keys[i])));
+    }
+  }
+  task.setCurrentDirectoryPath($(dir));
+  task.setEnvironment(env);
+}
+
 function runSync(argv) {
   var outPath = joinPath(tempDir(), 'duckov-cmd-out.txt');
   var errPath = joinPath(tempDir(), 'duckov-cmd-err.txt');
@@ -467,6 +516,7 @@ function runSync(argv) {
   var errHandle = $.NSFileHandle.fileHandleForWritingAtPath($(errPath));
   if (outHandle) task.setStandardOutput(outHandle);
   if (errHandle) task.setStandardError(errHandle);
+  attachTaskEnvironment(task, null);
   objc(task.launch);
   objc(task.waitUntilExit);
   try { if (outHandle) objc(outHandle.closeFile); } catch (e1) {}
@@ -628,6 +678,7 @@ function finishTask() {
     appendLogFile('\n退出码 / Exit code: 0\n完成 / Done\n');
     stepDone[1] = true;
     try { prepareReadyPath = normalize(fieldText(destField)).toLowerCase(); } catch (eReady) { prepareReadyPath = ''; }
+    cancelModScan();
     lastModScanDest = prepareReadyPath;
     try {
       var preparedMods = listCoopMods('dest', normalize(fieldText(destField)));
@@ -680,12 +731,9 @@ function startTask(argv, kind, header, resetLog) {
     var i;
     for (i = 1; i < argv.length; i++) nsArgs.addObject($(String(argv[i])));
     runningTask.setArguments(nsArgs);
-    var info = objc($.NSProcessInfo.processInfo);
-    var env = objc(objc(info.environment).mutableCopy);
-    env.setObjectForKey($(logPath), $('DUCKOV_GUI_LOG'));
-    if (kind === 'download') env.setObjectForKey($(resultPath), $('DUCKOV_MODS_RESULT'));
-    runningTask.setEnvironment(env);
-    if (resources) runningTask.setCurrentDirectoryPath($(resources));
+    var extraEnv = { DUCKOV_GUI_LOG: logPath };
+    if (kind === 'download') extraEnv.DUCKOV_MODS_RESULT = resultPath;
+    attachTaskEnvironment(runningTask, extraEnv);
     var devNull = $.NSFileHandle.fileHandleForWritingAtPath($('/dev/null'));
     if (devNull) {
       runningTask.setStandardOutput(devNull);
@@ -914,6 +962,7 @@ function onPrepare() {
     refreshGuide();
     return;
   }
+  cancelModScan();
   setBusy(true);
   setStatus('正在准备… 复制游戏时可能需要几分钟。 / Preparing… Copying the game can take several minutes.', null);
   var argv = ['/bin/bash', script];
@@ -1213,6 +1262,7 @@ function onWindowShouldClose() {
 }
 
 function onWindowWillClose() {
+  cancelModScan();
   try {
     if (runningTask && taskIsRunning(runningTask)) objc(runningTask.terminate);
   } catch (e) {}
@@ -1770,6 +1820,30 @@ function registerController() {
         types: ['void', ['id']],
         implementation: function (timer) { onPoll(timer); }
       },
+      'startDestModScan:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { startDestModScan(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
+      'scanPoll:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { onScanPoll(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
+      'applicationDidFinishLaunching:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { scheduleDestModScan(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
       'windowShouldClose:': {
         types: ['bool', ['id']],
         implementation: function () { return onWindowShouldClose(); }
@@ -1894,16 +1968,8 @@ function versionsEqual(a, b) {
   return !!left && left === right;
 }
 
-function listCoopMods(which, path) {
-  var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
-  if (!script || !fileExists(script) || !path) return [];
-  var args = ['/bin/bash', script, '--list-coop-mods'];
-  if (which === 'dest') args.push('--dest', path);
-  else args.push('--mods-dir', path);
-  var result = null;
-  try { result = runSync(args); } catch (e) { return []; }
-  if (!result || result.code !== 0) return [];
-  var lines = String(result.stdout || '').split('\n');
+function parseCoopModLines(text) {
+  var lines = String(text || '').split('\n');
   var out = [];
   var i;
   for (i = 0; i < lines.length; i++) {
@@ -1913,6 +1979,24 @@ function listCoopMods(which, path) {
     out.push({ version: parts[1], path: parts.slice(2).join('\t') });
   }
   return out;
+}
+
+function coopModListArgs(which, path) {
+  var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
+  if (!script || !fileExists(script) || !path) return null;
+  var args = ['/bin/bash', script, '--list-coop-mods'];
+  if (which === 'dest') args.push('--dest', path);
+  else args.push('--mods-dir', path);
+  return args;
+}
+
+function listCoopMods(which, path) {
+  var args = coopModListArgs(which, path);
+  if (!args) return [];
+  var result = null;
+  try { result = runSync(args); } catch (e) { return []; }
+  if (!result || result.code !== 0) return [];
+  return parseCoopModLines(result.stdout);
 }
 
 function folderHasVersion(path, version) {
@@ -1999,16 +2083,191 @@ function copyLooksPrepared() {
   return true;
 }
 
+// File checks only. Do not list mods here: that shells out and used to block
+// init. buildInterface calls this before makeKeyAndOrderFront.
 function detectExistingProgress() {
   try {
     if (copyLooksPrepared()) stepDone[1] = true;
+    else stepDone[3] = false;
     if (configsLookSynced()) stepDone[2] = true;
-    if (stepDone[1]) {
-      var found = listCoopMods('dest', normalize(fieldText(destField)));
-      if (found.length > 0) stepDone[3] = true;
-      lastModScanDest = normalize(fieldText(destField)).toLowerCase();
-    }
   } catch (e) {}
+}
+
+function invalidateScanTimer() {
+  if (!scanTimer) return;
+  try { objc(scanTimer.invalidate); } catch (e) {}
+  scanTimer = null;
+}
+
+function closeScanHandles() {
+  try { if (scanOutHandle) objc(scanOutHandle.closeFile); } catch (e1) {}
+  try { if (scanErrHandle) objc(scanErrHandle.closeFile); } catch (e2) {}
+  scanOutHandle = null;
+  scanErrHandle = null;
+}
+
+function terminateScanTask() {
+  if (scanTask && taskIsRunning(scanTask)) {
+    try { objc(scanTask.terminate); } catch (e) {}
+  }
+  scanTask = null;
+  closeScanHandles();
+}
+
+function cancelModScan() {
+  scanToken += 1;
+  scanDestKey = '';
+  scanArmedToken = -1;
+  invalidateScanTimer();
+  terminateScanTask();
+}
+
+function finishDestModScan(key, found) {
+  scanDestKey = '';
+  var current = '';
+  try { current = normalize(fieldText(destField)).toLowerCase(); } catch (e) { current = ''; }
+  if (!key || current !== key) return;
+  lastModScanDest = key;
+  if (!copyLooksPrepared()) stepDone[3] = false;
+  else stepDone[3] = !!(found && found.length > 0);
+  if (busy) {
+    paintStepHeaders();
+    return;
+  }
+  refreshGuide();
+  paintPrepareButton(true);
+}
+
+function armScanTimer(interval, selector, repeats) {
+  scanTimer = $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    interval,
+    controller,
+    selector,
+    null,
+    !!repeats
+  );
+}
+
+// Queue a --list-coop-mods read. The timer fires only after the run loop
+// starts, so the window is already on screen. The callback launches NSTask
+// and returns; it does not waitUntilExit.
+function scheduleDestModScan() {
+  if (quitting || !controller || !destField) return;
+  var dest = '';
+  var prepared = false;
+  try {
+    dest = normalize(fieldText(destField));
+    prepared = copyLooksPrepared();
+  } catch (e) {
+    dest = '';
+    prepared = false;
+  }
+  var key = dest ? dest.toLowerCase() : '';
+  if (!key || !prepared) return;
+  if (key === lastModScanDest) return;
+  if (key === scanDestKey && scanTask) return;
+  // A timer armed before -[NSApplication run] may never fire. Rearm it
+  // once the run loop is up instead of treating that timer as progress.
+  if (key === scanDestKey && scanTimer) invalidateScanTimer();
+  else if (scanTimer || scanTask) cancelModScan();
+  scanDestKey = key;
+  scanArmedToken = scanToken;
+  armScanTimer(0.05, 'startDestModScan:', false);
+}
+
+function startDestModScan() {
+  invalidateScanTimer();
+  if (quitting || scanToken !== scanArmedToken) return;
+  var dest = '';
+  var key = '';
+  try {
+    dest = normalize(fieldText(destField));
+    key = dest.toLowerCase();
+  } catch (e0) {
+    return;
+  }
+  if (key !== scanDestKey || !copyLooksPrepared()) return;
+  if (busy) {
+    armScanTimer(0.4, 'startDestModScan:', false);
+    return;
+  }
+  var args = coopModListArgs('dest', dest);
+  if (!args) {
+    finishDestModScan(key, []);
+    return;
+  }
+  scanOutPath = joinPath(tempDir(), 'duckov-mod-scan-out.txt');
+  scanErrPath = joinPath(tempDir(), 'duckov-mod-scan-err.txt');
+  try {
+    writeTextFile(scanOutPath, '');
+    writeTextFile(scanErrPath, '');
+  } catch (eWrite) {}
+  var outHandle = null;
+  var errHandle = null;
+  try {
+    scanTask = objc(objc($.NSTask.alloc).init);
+    scanTask.setLaunchPath($(args[0]));
+    var nsArgs = objc(objc($.NSMutableArray.alloc).init);
+    var i;
+    for (i = 1; i < args.length; i++) nsArgs.addObject($(String(args[i])));
+    scanTask.setArguments(nsArgs);
+    outHandle = $.NSFileHandle.fileHandleForWritingAtPath($(scanOutPath));
+    errHandle = $.NSFileHandle.fileHandleForWritingAtPath($(scanErrPath));
+    if (outHandle) scanTask.setStandardOutput(outHandle);
+    if (errHandle) scanTask.setStandardError(errHandle);
+    attachTaskEnvironment(scanTask, null);
+    objc(scanTask.launch);
+    scanOutHandle = outHandle;
+    scanErrHandle = errHandle;
+  } catch (error) {
+    scanTask = null;
+    try { if (outHandle) objc(outHandle.closeFile); } catch (eCloseOut) {}
+    try { if (errHandle) objc(errHandle.closeFile); } catch (eCloseErr) {}
+    finishDestModScan(key, []);
+    return;
+  }
+  scanDeadlineMs = Date.now() + MOD_SCAN_LIMIT_MS;
+  if (!taskIsRunning(scanTask)) {
+    var quickCode = 1;
+    try { quickCode = taskExitCode(scanTask); } catch (eQuick) { quickCode = 1; }
+    scanTask = null;
+    closeScanHandles();
+    finishDestModScan(key, quickCode === 0 ? parseCoopModLines(readTextFile(scanOutPath)) : []);
+    return;
+  }
+  armScanTimer(0.2, 'scanPoll:', true);
+}
+
+function onScanPoll() {
+  var key = scanDestKey;
+  var token = scanArmedToken;
+  if (quitting || scanToken !== token) {
+    invalidateScanTimer();
+    terminateScanTask();
+    return;
+  }
+  var running = false;
+  try { running = taskIsRunning(scanTask); } catch (eRun) { running = false; }
+  var timedOut = Date.now() > scanDeadlineMs;
+  if (running && !timedOut) return;
+  invalidateScanTimer();
+  if (running) {
+    try { objc(scanTask.terminate); } catch (eTerm) {}
+    scanTask = null;
+    closeScanHandles();
+    appendLogFile('检查副本里的联机 Mod 超时。窗口保持打开，第一步状态仍然有效。\nChecking the copy for the co-op Mod timed out. The window stays open, and Step 1 status still applies.\n');
+    finishDestModScan(key, []);
+    return;
+  }
+  var code = 1;
+  try { code = taskExitCode(scanTask); } catch (eCode) { code = 1; }
+  scanTask = null;
+  closeScanHandles();
+  var found = [];
+  if (code === 0) {
+    try { found = parseCoopModLines(readTextFile(scanOutPath)); } catch (eRead) { found = []; }
+  }
+  finishDestModScan(key, found);
 }
 
 // Dest or source text changed. Step 1 follows whether that copy exists.
@@ -2026,12 +2285,10 @@ function syncStepsToDest() {
   if (!prepared) {
     stepDone[3] = false;
     lastModScanDest = destKey;
+    cancelModScan();
   } else if (destKey !== lastModScanDest) {
-    lastModScanDest = destKey;
-    try {
-      var found = listCoopMods('dest', normalize(fieldText(destField)));
-      stepDone[3] = found.length > 0;
-    } catch (e2) {}
+    stepDone[3] = false;
+    scheduleDestModScan();
   }
   refreshGuide();
   paintPrepareButton(!busy);
@@ -2358,6 +2615,8 @@ function buildInterface(app) {
   mainWindow.makeKeyAndOrderFront(app);
   app.activateIgnoringOtherApps(true);
   paintPrepareButton(true);
+  // Mod listing starts on the run loop, after this window is ordered front.
+  scheduleDestModScan();
 }
 function startApp() {
   var env = runtimeEnv();
