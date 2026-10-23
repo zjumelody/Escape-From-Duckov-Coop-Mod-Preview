@@ -3,6 +3,11 @@
 //
 // JXA exposes some Objective-C methods as functions and some zero-argument calls as
 // values that are already invoked. objc() calls a function and otherwise returns the value.
+// 有的零参数调用在 JXA 里已经是取好的值。objc() 能调用就调用，否则返回原值。
+// On some macOS releases a resolved accessor still has typeof "function".
+// Calling it throws TypeError: Object is not a function (-2700); objc() returns that value.
+// 部分 macOS 上，已经取到的访问器 typeof 仍是 function。再调用会抛出
+// TypeError: Object is not a function (-2700)。objc() 会返回这个原值。
 
 ObjC.import('Cocoa');
 ObjC.import('Foundation');
@@ -38,8 +43,44 @@ var shared = null;
 var matcherError = '';
 
 function objc(value) {
-  if (typeof value === 'function') return value();
-  return value;
+  // 较新的 macOS（例如 27 / arm64）上，$.NSProcessInfo.processInfo 和 .environment
+  // 可能 typeof 为 function，但对象已经解析好。再调用会抛出
+  // TypeError: Object is not a function (-2700)。只接住这一类并返回原值。
+  // On newer macOS (for example 27 / arm64), $.NSProcessInfo.processInfo and
+  // .environment can report typeof "function" after they are already resolved.
+  // Calling them throws TypeError: Object is not a function (-2700).
+  // Only that failure returns the value. Other errors still propagate.
+  if (typeof value !== 'function') return value;
+  try {
+    return value();
+  } catch (error) {
+    if (isResolvedAccessorError(error)) return value;
+    throw error;
+  }
+}
+
+function isResolvedAccessorError(error) {
+  var text = '';
+  var code = null;
+  try {
+    text = String(error && error.message != null ? error.message : error);
+  } catch (ignored) {
+    text = '';
+  }
+  if (text.indexOf('not a function') !== -1 || text.indexOf('-2700') !== -1) return true;
+  try {
+    text = String(error);
+  } catch (ignoredAgain) {
+    text = '';
+  }
+  if (text.indexOf('not a function') !== -1 || text.indexOf('-2700') !== -1) return true;
+  try {
+    if (error && error.errorNumber != null) code = error.errorNumber;
+    else if (error && error.number != null) code = error.number;
+  } catch (ignoredCode) {
+    code = null;
+  }
+  return code === -2700 || code === '-2700';
 }
 
 function unwrap(value) {
