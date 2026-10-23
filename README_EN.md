@@ -1,3 +1,6 @@
+Thanks to the original authors. The upstream project is https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
+Please support their work and follow the applicable rules.
+
 # Escape From Duckov Co-op Mod (Melody Fork · Mac compatible)
 
 **[简体中文](README.md)** | English
@@ -34,8 +37,15 @@ What the buttons do:
 - **Open Releases**: opens this fork's Releases page in the browser.
 - **Choose**: pick the original app, the place to save the copy, or an unzipped Mods folder.
 - **Clear**: clears the Mods path so this run does not install new mods.
+- **Open**: shows that row's path in Finder. An empty Mods field shows an alert. A `.app` is revealed in Finder and is not launched.
+- **Open original config folder**: opens Location 1 (original sandbox config). If the folder is missing, the helper explains why and does not create it.
+- **Open co-op config folder**: opens Location 2 (co-op config). The helper creates that folder when it is missing.
+- **Sync original → co-op**: mirrors Location 1 onto Location 2.
+- **Sync co-op → original**: mirrors Location 2 onto Location 1.
 
-Progress scrolls in the text area in the lower part of the window. Mods are in a section marked optional and can be left empty. Prepare co-op copy is the large button at the bottom. Open Releases is a small link beside the Mods section. Success and failure messages are in Chinese and English. The original `Duckov.app` is not modified.
+The original app keeps App Sandbox, so its config is `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov` (Location 1, original sandbox config). The co-op copy has App Sandbox off, so its config is `~/Library/Application Support/com.bilibili.duckov` (Location 2, co-op config). The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. Files that exist only in the destination are deleted. If reading Location 1 prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access, then try again.
+
+Progress scrolls in the text area in the lower part of the window. Mods, and config and saves, each sit in a section marked optional. Prepare co-op copy stays the large button at the bottom. Open Releases is a small link beside those sections. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
 
 ### Advanced: Terminal script
 
@@ -87,6 +97,3 @@ If a Release zip (for example `EscapeFromDuckovCoopMod*.zip`) sits next to the s
 - If you add Mods by hand later, run the helper or the script again so the copy is signed with those files included.
 
 License: [LICENSE.txt](LICENSE.txt)
-
-Thanks to the original authors. The upstream project is https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
-Please support their work and follow the applicable rules.

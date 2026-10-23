@@ -31,11 +31,13 @@ cp "$ROOT/gui/main.js" "$APP/Contents/Resources/main.js"
 cp "$ROOT/gui/release-match.js" "$APP/Contents/Resources/release-match.js"
 cp "$ROOT/gui/fetch-mod-zip.sh" "$APP/Contents/Resources/fetch-mod-zip.sh"
 cp "$ROOT/prepare-duckov-coop-app.sh" "$APP/Contents/Resources/prepare-duckov-coop-app.sh"
+cp "$ROOT/sync-duckov-config.sh" "$APP/Contents/Resources/sync-duckov-config.sh"
 cp "$ROOT/duckov-coop.entitlements" "$APP/Contents/Resources/duckov-coop.entitlements"
 
 chmod 755 "$APP/Contents/MacOS/DuckovCoopPrepare" \
   "$APP/Contents/Resources/prepare-duckov-coop-app.sh" \
-  "$APP/Contents/Resources/fetch-mod-zip.sh"
+  "$APP/Contents/Resources/fetch-mod-zip.sh" \
+  "$APP/Contents/Resources/sync-duckov-config.sh"
 chmod 644 "$APP/Contents/Info.plist" \
   "$APP/Contents/PkgInfo" \
   "$APP/Contents/Resources/main.js" \
@@ -47,7 +49,8 @@ chmod 644 "$APP/Contents/Info.plist" \
 cp -R "$APP" "$STAGE/DuckovCoopPrepare.app"
 chmod 755 "$STAGE/DuckovCoopPrepare.app/Contents/MacOS/DuckovCoopPrepare" \
   "$STAGE/DuckovCoopPrepare.app/Contents/Resources/prepare-duckov-coop-app.sh" \
-  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/fetch-mod-zip.sh"
+  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/fetch-mod-zip.sh" \
+  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/sync-duckov-config.sh"
 
 if [[ "$(uname -s)" == "Darwin" ]] && command -v codesign >/dev/null 2>&1; then
   if codesign --force --deep --sign - "$APP" && codesign --force --deep --sign - "$STAGE/DuckovCoopPrepare.app"; then
@@ -79,6 +82,7 @@ required = {
     "DuckovCoopPrepare.app/Contents/Resources/release-match.js": None,
     "DuckovCoopPrepare.app/Contents/Resources/fetch-mod-zip.sh": 0o755,
     "DuckovCoopPrepare.app/Contents/Resources/prepare-duckov-coop-app.sh": 0o755,
+    "DuckovCoopPrepare.app/Contents/Resources/sync-duckov-config.sh": 0o755,
     "DuckovCoopPrepare.app/Contents/Resources/duckov-coop.entitlements": None,
 }
 with zipfile.ZipFile(zip_path) as archive:
