@@ -71,6 +71,40 @@ assert.ok(sliceFunction('imagePositionOnly').indexOf('NSImageOnly') !== -1);
 assert.ok(src.indexOf('makeCenteredTitleImage') !== -1);
 assert.ok(src.indexOf('makeStackedTitleImage') !== -1);
 
+assert.ok(src.indexOf('第二步：配置文件（包括存档）同步 / Step 2: Sync config files (including saves)') !== -1);
+var ratioMatch = src.match(/var BIG_BUTTON_WIDTH_RATIO = ([0-9.]+);/);
+assert.ok(ratioMatch, 'prepare width ratio is named');
+var ratio = Number(ratioMatch[1]);
+assert.ok(ratio >= 0.60 && ratio <= 0.75, 'prepare width stays in the requested band');
+assert.ok(build.indexOf('contentW * BIG_BUTTON_WIDTH_RATIO') !== -1);
+var bigButtonUses = build.split('prepareW, prepareH').length - 1;
+assert.ok(bigButtonUses >= 2, 'download button uses the prepare button size');
+assert.ok(src.indexOf('var CONFIG_OPEN_BUTTON_HEIGHT = 45;') !== -1);
+assert.ok(src.indexOf('var SYNC_BUTTON_HEIGHT = 84;') !== -1);
+
+var front = build.indexOf('makeKeyAndOrderFront');
+assert.ok(build.indexOf('clearInitialFocus') > front);
+assert.ok(build.lastIndexOf('scheduleReleaseCheck') > front);
+assert.ok(build.lastIndexOf('scheduleConfigCompare') > front);
+assert.ok(build.indexOf('startReleaseCheck') === -1);
+assert.ok(build.indexOf('startConfigCompare') === -1);
+
+var clearFocus = sliceFunction('clearInitialFocus');
+assert.ok(clearFocus.indexOf('makeFirstResponder') !== -1);
+assertNoSyncScan(clearFocus, 'clearInitialFocus');
+assert.ok(sliceFunction('styleChromeButton').indexOf('setFocusRingType') !== -1);
+
+function assertAsyncLaunch(name) {
+  var body = sliceFunction(name);
+  assert.ok(body.indexOf('runSync') === -1, name + ' calls runSync');
+  assert.ok(body.indexOf('waitUntilExit') === -1, name + ' waits on NSTask');
+  assert.ok(body.indexOf('attachTaskEnvironment') !== -1, name + ' does not pin cwd');
+}
+assertAsyncLaunch('startReleaseCheck');
+assertAsyncLaunch('startConfigCompare');
+assert.ok(sliceFunction('onReleasePoll').indexOf('terminate') !== -1);
+assert.ok(sliceFunction('onConfigPoll').indexOf('terminate') !== -1);
+
 var parseCoopModLines = new Function(
   sliceFunction('parseCoopModLines') + '\nreturn parseCoopModLines;'
 )();

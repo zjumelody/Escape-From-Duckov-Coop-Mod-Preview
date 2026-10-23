@@ -64,6 +64,41 @@ var scanOutHandle = null;
 var scanErrHandle = null;
 var scanDeadlineMs = 0;
 var MOD_SCAN_LIMIT_MS = 15000;
+var downloadFill = null;
+var openOriginalFill = null;
+var openCoopFill = null;
+var syncToCoopFill = null;
+var syncToOriginalFill = null;
+var localModVersions = [];
+var localModScanDone = false;
+var releaseVersion = '';
+var releaseKnown = false;
+var releaseCheckFinished = false;
+var releaseTask = null;
+var releaseTimer = null;
+var releaseToken = 0;
+var releaseArmedToken = 0;
+var releaseJsonPath = '';
+var releaseErrPath = '';
+var releaseOutHandle = null;
+var releaseErrHandle = null;
+var releaseDeadlineMs = 0;
+var RELEASE_CHECK_LIMIT_MS = 50000;
+var lastDownloadLogKey = '';
+var configTask = null;
+var configTimer = null;
+var configToken = 0;
+var configArmedToken = 0;
+var configOutPath = '';
+var configErrPath = '';
+var configOutHandle = null;
+var configErrHandle = null;
+var configDeadlineMs = 0;
+var CONFIG_COMPARE_LIMIT_MS = 60000;
+var syncVisual = null;
+var syncStateApi = null;
+var syncStateError = '';
+var configLoggedKey = '';
 var busy = false;
 var quitting = false;
 var closing = false;
@@ -313,6 +348,8 @@ function setBusy(flag) {
   if (destField) destField.setEditable(enabled);
   if (modsField) modsField.setEditable(enabled);
   paintPrepareButton(enabled);
+  paintDownloadButton(enabled);
+  paintSyncButtons(enabled);
 }
 
 function showAlert(title, info) {
@@ -424,7 +461,20 @@ function loadShared(resourcesDir) {
   var sandbox = {};
   var runner = new Function(
     'exports',
-    text + '\nexports.selectCoopModAsset = selectCoopModAsset;\nexports.safeReleaseDownloadUrl = safeReleaseDownloadUrl;\nexports.safeModZipName = safeModZipName;\nexports.releaseAssetVersionLabel = releaseAssetVersionLabel;\n'
+    text + '\nexports.selectCoopModAsset = selectCoopModAsset;\nexports.safeReleaseDownloadUrl = safeReleaseDownloadUrl;\nexports.safeModZipName = safeModZipName;\nexports.releaseAssetVersionLabel = releaseAssetVersionLabel;\nexports.versionsSame = versionsSame;\nexports.versionIsNewer = versionIsNewer;\nexports.downloadButtonState = downloadButtonState;\n'
+  );
+  runner(sandbox);
+  return sandbox;
+}
+
+function loadSyncState(resourcesDir) {
+  var path = joinPath(resourcesDir, 'config-sync-state.js');
+  var text = readTextFile(path);
+  if (!text) throw new Error('missing ' + path);
+  var sandbox = {};
+  var runner = new Function(
+    'exports',
+    text + '\nexports.formatSyncStamp = formatSyncStamp;\nexports.syncButtonLines = syncButtonLines;\nexports.parseFingerprint = parseFingerprint;\nexports.compareConfigSides = compareConfigSides;\nexports.describeCompare = describeCompare;\n'
   );
   runner(sandbox);
   return sandbox;
@@ -438,10 +488,10 @@ function introText() {
     'Current status at the top of the window says what to do next. A finished step\'s title turns green and gains a ✅.',
     '第一步：准备联机副本。确认原版 Duckov.app 和副本位置（默认 ~/Applications/Duckov-COOP.app），再点这一步里的「准备联机副本」。副本还不存在时按钮是蓝色；打开时已经有副本则是黄色，点它会重新生成；这一次准备成功后变成绿色。原版不会被修改。',
     'Step 1: Prepare the co-op copy. Confirm the original Duckov.app and the copy (default ~/Applications/Duckov-COOP.app), then click Prepare co-op copy in that step. The button is blue when the copy is not there yet, yellow when a copy is already on disk (clicking regenerates it), and green after a successful prepare in this session. The original app is not modified.',
-    '第二步：配置文件同步。原版配置和联机副本配置可以互相镜像。同步前请退出两边的游戏。',
-    'Step 2: Sync config files. The original config folder and the co-op config folder can be mirrored either way. Quit both games before syncing.',
-    '第三步：配置（支持 Mac 的）联机 Mod。已经下载的话选择位置，会更新到副本；没有的话点下载按钮，自动下载并拷贝到副本的 Mods。',
-    'Step 3: Configure the Mac-compatible co-op Mod. If you already downloaded it, pick its location and it updates into the copy; otherwise use the download button to download and copy it into the copy\'s Mods folder.',
+    '第二步：配置文件（包括存档）同步。两边一致时，两个同步按钮都是绿色。不一致时，较新一侧的同步按钮是蓝色，较旧一侧是黄色，并显示最后更新时间。同步前请退出两边的游戏。',
+    'Step 2: Sync config files (including saves). When the two folders match, both sync buttons are green. When they differ, the button that copies from the newer side is blue and the other is yellow, and each shows when that side was last updated. Quit both games before syncing.',
+    '第三步：配置（支持 Mac 的）联机 Mod。下载按钮和第一步的准备按钮一样大。副本里还没有这个 Mod 时是蓝色；已经是最新 Release 时是绿色，点击不会重复下载；有更新时是黄色。',
+    'Step 3: Configure the Mac-compatible co-op Mod. The download button is the same size as Prepare in Step 1. It is blue when the copy does not have this Mod yet, green when the copy already matches the latest Release (a click does not download it again), and yellow when an update is available.',
     '',
     '若系统提示无法验证开发者：按住 Control 点按本应用，选择「打开」。只需一次。',
     '若菜单里没有「打开」，到「系统设置 → 隐私与安全性」里点「仍要打开」。',
@@ -455,6 +505,12 @@ function introText() {
     lines.push('版本匹配脚本没有载入，仍可准备副本，但不能从这里下载 Mod。');
     lines.push('The release matcher did not load. Preparing a copy still works; download does not.');
     lines.push(matcherError);
+  }
+  if (syncStateError) {
+    lines.push('');
+    lines.push('配置比较脚本没有载入。同步按钮保持灰色。');
+    lines.push('The config compare script did not load. Sync buttons stay grey.');
+    lines.push(syncStateError);
   }
   return lines.join('\n');
 }
@@ -612,6 +668,7 @@ function finishTask() {
       appendLogFile('\n退出码 / Exit code: 0\n同步完成 / Sync finished\n');
       setBusy(false);
       markStep(2);
+      queueConfigCompare();
       showAlert(
         '同步完成 / Sync finished',
         '配置文件夹里的内容已按来源镜像到目标。这不会修改 .app 本身。\nThe config folder contents were mirrored onto the destination. The .app bundles themselves are not modified.'
@@ -621,6 +678,7 @@ function finishTask() {
     appendLogFile('\n退出码 / Exit code: ' + code + '\n同步未完成 / Sync did not finish\n');
     setStatus('同步未完成。请查看日志。 / Sync did not finish. Read the log.', false);
     setBusy(false);
+    queueConfigCompare();
     if (needAccess) {
       showAlert('需要完全磁盘访问权限 / Full Disk Access is required', fullDiskAccessText());
     } else {
@@ -641,6 +699,7 @@ function finishTask() {
       appendLogFile('\n退出码 / Exit code: 0\n已更新到副本 Mods / Updated into the copy\'s Mods\n');
       setBusy(false);
       markStep(3);
+      queueDestModRescan();
       if (skippedSame) {
         showAlert(
           '已是最新版本 / Already the latest version',
@@ -682,6 +741,7 @@ function finishTask() {
     lastModScanDest = prepareReadyPath;
     try {
       var preparedMods = listCoopMods('dest', normalize(fieldText(destField)));
+      rememberLocalMods(preparedMods);
       if (preparedMods.length > 0) stepDone[3] = true;
     } catch (ePrepared) {}
     setBusy(false);
@@ -903,6 +963,7 @@ function onSync(direction, skipConfirm) {
     refreshGuide();
     return;
   }
+  cancelConfigCompare();
   setBusy(true);
   setStatus('正在同步配置… 请保持两边游戏都已退出。 / Syncing config… Keep both games quit.', null);
   var argv = ['/bin/bash', script, '--direction', flag];
@@ -985,6 +1046,10 @@ function onPrepare() {
 
 function onDownload() {
   if (busy || quitting) return;
+  if (downloadVisualState() === 'ready') {
+    skipReadyDownload();
+    return;
+  }
   setBusy(true);
   setStatus('正在查询最新支持 Mac 的联机 Mod… / Looking up the latest Mac-compatible co-op Mod…', null);
   appendLogFile('正在查询最新支持 Mac 的联机 Mod… / Looking up the latest Mac-compatible co-op Mod…');
@@ -1263,6 +1328,8 @@ function onWindowShouldClose() {
 
 function onWindowWillClose() {
   cancelModScan();
+  cancelReleaseCheck();
+  cancelConfigCompare();
   try {
     if (runningTask && taskIsRunning(runningTask)) objc(runningTask.terminate);
   } catch (e) {}
@@ -1402,15 +1469,21 @@ var PREPARE_TITLE_SIZE = 14;
 var SYNC_TO_COOP_TITLE = '（同步文件）原版配置 → 联机副本 / (sync files) original → co-op';
 var SYNC_TO_ORIGINAL_TITLE = '（同步文件）联机副本 → 原版配置 / (sync files) co-op → original';
 var STEP1_TITLE = '第一步：准备联机副本 / Step 1: Prepare co-op copy';
-var STEP2_TITLE = '第二步：配置文件同步 / Step 2: Sync config files';
+var STEP2_TITLE = '第二步：配置文件（包括存档）同步 / Step 2: Sync config files (including saves)';
 var STEP3_TITLE = '第三步：配置（支持Mac的）联机 Mod / Step 3: Configure (Mac-compatible) co-op Mod';
 var STEP1_HELP = '复制官方 Duckov.app，只改副本：关闭 App Sandbox，加入联网权限，并用本机 codesign 身份 "-" 重新签名。原版不会被修改。\nCopy the official Duckov.app and change only the copy: turn off App Sandbox, add network access, and re-sign with the local codesign identity "-". The original app is not modified.';
 var STEP3_HELP = '已经下载了最新版支持 Mac 联机的 Mod 的话可以指定文件位置，会自动更新到副本 App 里；如果没有下载则可以点击下载按钮自动下载并拷贝到副本 Mods 里。\nIf you already downloaded the latest Mac-compatible co-op Mod, pick its location and it will update into the copy App; if not, use the download button to download and copy it into the copy\'s Mods folder.';
 var DOWNLOAD_MOD_TITLE_ZH = '自动下载并更新最新支持 Mac 的联机 Mod 到副本 Mods 位置';
 var DOWNLOAD_MOD_TITLE_EN = 'Auto-download and update the latest Mac-compatible co-op Mod into the copy\'s Mods folder';
 var DOWNLOAD_MOD_TITLE = DOWNLOAD_MOD_TITLE_ZH + ' / ' + DOWNLOAD_MOD_TITLE_EN;
-// 70 is about 1.5× the previous 46-point download button, so the two-line title stays readable.
-var DOWNLOAD_BUTTON_HEIGHT = 70;
+var DOWNLOAD_READY_TITLE_ZH = '已经是最新版本';
+var DOWNLOAD_READY_TITLE_EN = 'Already the latest version';
+// About 70% of the step content width, centered. The old Prepare button ran edge to edge.
+var BIG_BUTTON_WIDTH_RATIO = 0.70;
+// 45 is 1.5 × the previous 30-point Step 2 buttons. Open-folder buttons stay at 45.
+// Sync buttons are taller so the action and the last-updated lines stay readable.
+var CONFIG_OPEN_BUTTON_HEIGHT = 45;
+var SYNC_BUTTON_HEIGHT = 84;
 var STATUS_TITLE = '当前状态： / Current status:';
 var OPEN_GITHUB_TITLE = '打开 GitHub 页面 / Open GitHub';
 var MODS_PLACEHOLDER = '已下载的 Mac 联机 Mod 文件夹 / Downloaded Mac co-op Mod folder';
@@ -1615,37 +1688,279 @@ function applyImageOnly(button, image, label) {
   try { button.setToolTip($(label)); } catch (e7) {}
 }
 
-function styleDownloadButton(button) {
-  if (!button) return;
-  var bounds = viewSize(button, 900, DOWNLOAD_BUTTON_HEIGHT);
-  var fontSize = 14;
-  var font = $.NSFont.systemFontOfSize(fontSize);
-  var maxW = bounds.width > 40 ? bounds.width - 24 : 800;
-  var enW = measureText(DOWNLOAD_MOD_TITLE_EN, font).width;
-  var zhW = measureText(DOWNLOAD_MOD_TITLE_ZH, font).width;
-  if (enW > maxW || zhW > maxW) {
-    fontSize = 13;
-    font = $.NSFont.systemFontOfSize(fontSize);
+function actionPalette(state, enabled) {
+  if (state === 'neutral') {
+    if (enabled) return { r: 0.90, g: 0.91, b: 0.93, text: rgb(0.15, 0.15, 0.16) };
+    return { r: 0.86, g: 0.86, b: 0.88, text: rgb(0.35, 0.35, 0.36) };
   }
-  var color = $.NSColor.blackColor;
+  return preparePalette(state, enabled);
+}
+
+function fitFont(lines, width, startSize, bold, minSize) {
+  var size = startSize;
+  var inset = width > 40 ? width - 20 : width;
+  var font = null;
+  if (!(minSize > 0)) minSize = 10;
+  while (size >= minSize) {
+    font = bold ? $.NSFont.boldSystemFontOfSize(size) : $.NSFont.systemFontOfSize(size);
+    var fits = true;
+    var i;
+    for (i = 0; i < lines.length; i++) {
+      if (measureText(lines[i], font).width > inset) fits = false;
+    }
+    if (fits) return font;
+    size -= 1;
+  }
+  if (bold) return $.NSFont.boldSystemFontOfSize(minSize);
+  return $.NSFont.systemFontOfSize(minSize);
+}
+
+function paintFlatButton(button, fill, palette, lines, startSize, bold, tooltip) {
+  if (!button || !lines || !lines.length) return;
+  if (fill) {
+    try { fill.setFillColor(rgb(palette.r, palette.g, palette.b)); } catch (eFill) {}
+  }
+  paintLayer(button, palette.r, palette.g, palette.b, 6);
+  var bounds = viewSize(button, 480, 48);
+  var font = fitFont(lines, bounds.width, startSize, !!bold, 10);
   var image = null;
   try {
-    image = makeStackedTitleImage(
-      [DOWNLOAD_MOD_TITLE_ZH, DOWNLOAD_MOD_TITLE_EN],
-      font,
-      color,
-      bounds.width,
-      bounds.height
-    );
-  } catch (e2) {
+    if (lines.length === 1) image = makeCenteredTitleImage(lines[0], font, palette.text, bounds.width, bounds.height);
+    else image = makeStackedTitleImage(lines, font, palette.text, bounds.width, bounds.height);
+  } catch (eImage) {
     image = null;
   }
-  try { button.setToolTip($(DOWNLOAD_MOD_TITLE)); } catch (e3) {}
+  var label = tooltip || lines.join('\n');
+  try { button.setAttributedTitle(objc($.NSAttributedString.alloc).initWithString($(''))); } catch (eAttr) {}
   if (!image) {
-    try { button.setTitle($(DOWNLOAD_MOD_TITLE)); } catch (e4) {}
+    try { button.setTitle($(lines.join(' / '))); } catch (eTitle) {}
+    try { button.setToolTip($(label)); } catch (eTip) {}
     return;
   }
-  applyImageOnly(button, image, DOWNLOAD_MOD_TITLE);
+  applyImageOnly(button, image, label);
+  try { button.setBezelColor(rgb(palette.r, palette.g, palette.b)); } catch (eBezel) {}
+}
+
+function makeFlatButton(x, y, w, h, action, title) {
+  var fill = null;
+  try {
+    fill = objc($.NSBox.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+    fill.setTitle($(''));
+    fill.setTitlePosition(0);
+    fill.setBoxType(4);
+    fill.setBorderType(0);
+    fill.setBorderWidth(0);
+    fill.setCornerRadius(6);
+    fill.setFillColor(rgb(0.90, 0.91, 0.93));
+    fill.setTransparent(false);
+  } catch (eBox) {
+    fill = null;
+  }
+  var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+  button.setTitle($(title || ''));
+  button.setBordered(false);
+  button.setTarget(controller);
+  if (action) button.setAction(action);
+  try { button.setFocusRingType(1); } catch (eRing) {}
+  try {
+    var cell = objc(button.cell);
+    cell.setBordered(false);
+    cell.setBackgroundColor(objc($.NSColor.clearColor));
+  } catch (eCell) {}
+  return { fill: fill, button: button };
+}
+
+function downloadPaletteState(visual) {
+  if (visual === 'ready') return 'ready';
+  if (visual === 'outdated') return 'exists';
+  return 'idle';
+}
+
+function downloadVisualState() {
+  if (!localModScanDone) return 'idle';
+  if (!shared || !shared.downloadButtonState) return 'idle';
+  try {
+    return shared.downloadButtonState(localModVersions, releaseVersion, releaseKnown);
+  } catch (e) {
+    return 'idle';
+  }
+}
+
+function downloadTitleLines(visual) {
+  if (visual === 'ready') return [DOWNLOAD_READY_TITLE_ZH, DOWNLOAD_READY_TITLE_EN];
+  return [DOWNLOAD_MOD_TITLE_ZH, DOWNLOAD_MOD_TITLE_EN];
+}
+
+function rememberLocalMods(found) {
+  var versions = [];
+  var i;
+  if (found) {
+    for (i = 0; i < found.length; i++) versions.push(found[i].version);
+  }
+  localModVersions = versions;
+  localModScanDone = true;
+}
+
+function noteDownloadVisual(visual) {
+  if (!localModScanDone) return;
+  if (localModVersions.length > 0 && !releaseCheckFinished) return;
+  var zh = '';
+  var en = '';
+  if (visual === 'ready') {
+    var exactReady = false;
+    var readyIndex;
+    if (shared && shared.versionsSame) {
+      for (readyIndex = 0; readyIndex < localModVersions.length; readyIndex++) {
+        try {
+          if (shared.versionsSame(localModVersions[readyIndex], releaseVersion)) exactReady = true;
+        } catch (eSame) {}
+      }
+    }
+    if (exactReady) {
+      zh = '副本里的联机 Mod 已是最新 Release（' + releaseVersion + '），下载按钮为绿色。点击不会重复下载。';
+      en = 'The co-op Mod in the copy matches the latest Release (' + releaseVersion + '). The download button is green. A click will not download it again.';
+    } else {
+      zh = '副本里的联机 Mod（' + localModVersions.join(', ') + '）已经比最新 Release（' + releaseVersion + '）更新，下载按钮为绿色。点击不会改成更旧的版本。';
+      en = 'The co-op Mod in the copy (' + localModVersions.join(', ') + ') is newer than the latest Release (' + releaseVersion + '). The download button is green. A click will not replace it with the older release.';
+    }
+  } else if (visual === 'outdated') {
+    zh = '最新 Release（' + releaseVersion + '）和副本里的联机 Mod（' + localModVersions.join(', ') + '）不同，下载按钮为黄色。';
+    en = 'Release ' + releaseVersion + ' differs from the co-op Mod in the copy (' + localModVersions.join(', ') + '). The download button is yellow.';
+  } else if (localModVersions.length === 0) {
+    zh = '副本里还没有支持 Mac 的联机 Mod，下载按钮为蓝色。';
+    en = 'The copy does not have the Mac co-op Mod yet. The download button is blue.';
+  } else {
+    zh = '无法确认 GitHub 上的最新 Release，下载按钮保持蓝色。';
+    en = 'Could not confirm the latest GitHub Release. The download button stays blue.';
+  }
+  var key = zh + '\n' + en;
+  if (!zh || key === lastDownloadLogKey) return;
+  lastDownloadLogKey = key;
+  appendLogFile(key + '\n');
+}
+
+function paintDownloadButton(enabled) {
+  if (!downloadButton) return;
+  var visual = downloadVisualState();
+  var lines = downloadTitleLines(visual);
+  var tip = visual === 'ready'
+    ? (DOWNLOAD_READY_TITLE_ZH + ' / ' + DOWNLOAD_READY_TITLE_EN)
+    : DOWNLOAD_MOD_TITLE;
+  paintFlatButton(
+    downloadButton,
+    downloadFill,
+    actionPalette(downloadPaletteState(visual), !!enabled),
+    lines,
+    visual === 'ready' ? 15 : 13,
+    visual === 'ready',
+    tip
+  );
+  noteDownloadVisual(visual);
+}
+
+function localOffsetMinutes(epochSeconds) {
+  var epoch = Number(epochSeconds);
+  if (!isFinite(epoch)) epoch = 0;
+  try {
+    var tz = objc($.NSTimeZone.localTimeZone);
+    var date = $.NSDate.dateWithTimeIntervalSince1970(epoch);
+    var seconds = NaN;
+    try { seconds = asNumber(tz.secondsFromGMTForDate(date)); } catch (e1) { seconds = NaN; }
+    if (!isFinite(seconds)) {
+      try { seconds = asNumber(objc(tz.secondsFromGMT)); } catch (e2) { seconds = NaN; }
+    }
+    if (isFinite(seconds)) return Math.round(seconds / 60);
+  } catch (e) {}
+  return 480;
+}
+
+function syncColorName(color) {
+  if (color === 'green') return 'ready';
+  if (color === 'yellow') return 'exists';
+  if (color === 'blue') return 'idle';
+  return 'neutral';
+}
+
+function syncPresentation(which) {
+  var epoch = null;
+  var color = 'neutral';
+  if (syncVisual && syncVisual.status !== 'unknown' && syncVisual.status !== 'missing') {
+    epoch = which === 'to-coop' ? syncVisual.originalMtime : syncVisual.coopMtime;
+    color = which === 'to-coop' ? syncVisual.toCoop : syncVisual.toOriginal;
+  }
+  var lines = which === 'to-coop'
+    ? ['（同步文件）原版配置 → 联机副本', '(sync files) original → co-op']
+    : ['（同步文件）联机副本 → 原版配置', '(sync files) co-op → original'];
+  if (syncStateApi && syncStateApi.syncButtonLines) {
+    try { lines = syncStateApi.syncButtonLines(which, epoch, localOffsetMinutes(epoch == null ? 0 : epoch)); } catch (eLines) {}
+  }
+  if (!syncVisual && syncStateApi) lines = lines.slice(0, 2).concat(['正在比较… / Comparing…']);
+  return { lines: lines, color: syncVisual ? color : 'neutral' };
+}
+
+function paintSyncButtons(enabled) {
+  var toCoop = syncPresentation('to-coop');
+  var toOriginal = syncPresentation('to-original');
+  paintFlatButton(syncToCoopButton, syncToCoopFill, actionPalette(syncColorName(toCoop.color), !!enabled), toCoop.lines, 12, false, toCoop.lines.join('\n'));
+  paintFlatButton(syncToOriginalButton, syncToOriginalFill, actionPalette(syncColorName(toOriginal.color), !!enabled), toOriginal.lines, 12, false, toOriginal.lines.join('\n'));
+}
+
+function paintOpenConfigButtons() {
+  var grey = actionPalette('neutral', true);
+  paintFlatButton(
+    openOriginalConfigButton,
+    openOriginalFill,
+    grey,
+    ['打开原版配置位置', 'Open original config folder'],
+    13,
+    false,
+    '打开原版配置位置 / Open original config folder'
+  );
+  paintFlatButton(
+    openCoopConfigButton,
+    openCoopFill,
+    grey,
+    ['打开联机副本配置位置', 'Open co-op config folder'],
+    13,
+    false,
+    '打开联机副本配置位置 / Open co-op config folder'
+  );
+}
+
+function skipReadyDownload() {
+  var exact = false;
+  var i;
+  if (shared && shared.versionsSame && releaseKnown) {
+    for (i = 0; i < localModVersions.length; i++) {
+      if (shared.versionsSame(localModVersions[i], releaseVersion)) exact = true;
+    }
+  }
+  if (exact && localModVersions.length > 1) {
+    appendLogFile('副本里已有版本 ' + releaseVersion + '，但还有重复的旧联机 Mod。将去掉重复项，不重新下载。\nVersion ' + releaseVersion + ' is already in the copy, along with a duplicate. Duplicates will be removed. The download was skipped.\n');
+    startDedupe(releaseVersion);
+    return;
+  }
+  var shown = localModVersions.join(', ');
+  var zh = exact
+    ? '副本里已经是版本 ' + releaseVersion + '，跳过下载。'
+    : '副本里的联机 Mod（' + shown + '）已经不低于最新 Release（' + releaseVersion + '），跳过下载。';
+  var en = exact
+    ? 'The copy already has version ' + releaseVersion + '. Skipped the download.'
+    : 'The co-op Mod in the copy (' + shown + ') is at least the latest Release (' + releaseVersion + '). Skipped the download.';
+  appendLogFile(zh + '\n' + en + '\n');
+  setStatus(zh + ' / ' + en, true);
+  markStep(3);
+  if (exact) {
+    showAlert(
+      '已是最新版本 / Already the latest version',
+      '副本里已经是这个版本的联机 Mod（' + releaseVersion + '），无需重新下载。\n\nThe copy already has this co-op Mod version (' + releaseVersion + '). The download was skipped.\n\n' + fieldText(destField)
+    );
+  } else {
+    showAlert(
+      '已是最新版本 / Already the latest version',
+      '副本里的联机 Mod 已经比最新 Release 更新，没有改成更旧的版本。\n\nThe co-op Mod in the copy is newer than the latest Release. It was not replaced with the older one.\n\n' + fieldText(destField)
+    );
+  }
 }
 
 function styleChromeButton(button) {
@@ -1655,6 +1970,7 @@ function styleChromeButton(button) {
   var b = 0.76;
   var fill = rgb(r, g, b);
   try { button.setBordered(false); } catch (e0) {}
+  try { button.setFocusRingType(1); } catch (eRing) {}
   try {
     var cell = objc(button.cell);
     cell.setBordered(false);
@@ -1839,7 +2155,53 @@ function registerController() {
       'applicationDidFinishLaunching:': {
         types: ['void', ['id']],
         implementation: function () {
+          try { clearInitialFocus(); } catch (eFocus) {}
+          try { armFocusClear(); } catch (eArm) {}
           try { scheduleDestModScan(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+          try { scheduleReleaseCheck(); } catch (eRel) {
+            try { appendLogFile('错误 / Error: ' + eRel); } catch (eLog2) {}
+          }
+          try { scheduleConfigCompare(); } catch (eCfg) {
+            try { appendLogFile('错误 / Error: ' + eCfg); } catch (eLog3) {}
+          }
+        }
+      },
+      'clearInitialFocus:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { clearInitialFocus(); } catch (eFocus) {}
+        }
+      },
+      'startReleaseCheck:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { startReleaseCheck(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
+      'releasePoll:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { onReleasePoll(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
+      'startConfigCompare:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { startConfigCompare(); } catch (error) {
+            try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
+          }
+        }
+      },
+      'configPoll:': {
+        types: ['void', ['id']],
+        implementation: function () {
+          try { onConfigPoll(); } catch (error) {
             try { appendLogFile('错误 / Error: ' + error); } catch (eLog) {}
           }
         }
@@ -1963,6 +2325,9 @@ function normalizeVersionLabel(text) {
 }
 
 function versionsEqual(a, b) {
+  if (shared && shared.versionsSame) {
+    try { return !!shared.versionsSame(a, b); } catch (e) {}
+  }
   var left = normalizeVersionLabel(a);
   var right = normalizeVersionLabel(b);
   return !!left && left === right;
@@ -2128,14 +2493,17 @@ function finishDestModScan(key, found) {
   try { current = normalize(fieldText(destField)).toLowerCase(); } catch (e) { current = ''; }
   if (!key || current !== key) return;
   lastModScanDest = key;
+  rememberLocalMods(found);
   if (!copyLooksPrepared()) stepDone[3] = false;
   else stepDone[3] = !!(found && found.length > 0);
   if (busy) {
     paintStepHeaders();
+    paintDownloadButton(false);
     return;
   }
   refreshGuide();
   paintPrepareButton(true);
+  paintDownloadButton(true);
 }
 
 function armScanTimer(interval, selector, repeats) {
@@ -2163,7 +2531,11 @@ function scheduleDestModScan() {
     prepared = false;
   }
   var key = dest ? dest.toLowerCase() : '';
-  if (!key || !prepared) return;
+  if (!key || !prepared) {
+    localModVersions = [];
+    localModScanDone = true;
+    return;
+  }
   if (key === lastModScanDest) return;
   if (key === scanDestKey && scanTask) return;
   // A timer armed before -[NSApplication run] may never fire. Rearm it
@@ -2284,19 +2656,371 @@ function syncStepsToDest() {
   stepDone[1] = !!prepared;
   if (!prepared) {
     stepDone[3] = false;
+    localModVersions = [];
+    localModScanDone = true;
     lastModScanDest = destKey;
     cancelModScan();
   } else if (destKey !== lastModScanDest) {
     stepDone[3] = false;
+    localModVersions = [];
+    localModScanDone = false;
     scheduleDestModScan();
   }
   refreshGuide();
   paintPrepareButton(!busy);
+  paintDownloadButton(!busy);
+}
+
+function queueDestModRescan() {
+  cancelModScan();
+  lastModScanDest = '';
+  localModScanDone = false;
+  scheduleDestModScan();
 }
 
 function onPathsEdited() {
   if (busy) return;
   syncStepsToDest();
+}
+
+function clearInitialFocus() {
+  if (!mainWindow || quitting) return;
+  try { if (releasesButton) releasesButton.setFocusRingType(1); } catch (eRing) {}
+  try { mainWindow.makeFirstResponder(null); } catch (e1) {
+    try { objc(mainWindow.makeFirstResponder(null)); } catch (e2) {}
+  }
+}
+
+function armFocusClear() {
+  if (!controller || quitting) return;
+  $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    0,
+    controller,
+    'clearInitialFocus:',
+    null,
+    false
+  );
+}
+
+function invalidateReleaseTimer() {
+  if (!releaseTimer) return;
+  try { objc(releaseTimer.invalidate); } catch (e) {}
+  releaseTimer = null;
+}
+
+function closeReleaseHandles() {
+  try { if (releaseOutHandle) objc(releaseOutHandle.closeFile); } catch (e1) {}
+  try { if (releaseErrHandle) objc(releaseErrHandle.closeFile); } catch (e2) {}
+  releaseOutHandle = null;
+  releaseErrHandle = null;
+}
+
+function cancelReleaseCheck() {
+  releaseToken += 1;
+  invalidateReleaseTimer();
+  if (releaseTask && taskIsRunning(releaseTask)) {
+    try { objc(releaseTask.terminate); } catch (e) {}
+  }
+  releaseTask = null;
+  closeReleaseHandles();
+}
+
+function scheduleReleaseCheck() {
+  if (quitting || !controller) return;
+  if (!shared || !shared.selectCoopModAsset) return;
+  if (releaseCheckFinished || releaseTask) return;
+  invalidateReleaseTimer();
+  releaseTimer = $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    0.05,
+    controller,
+    'startReleaseCheck:',
+    null,
+    false
+  );
+}
+
+function completeReleaseCheck(token, code) {
+  if (token !== releaseToken || releaseCheckFinished) return;
+  releaseCheckFinished = true;
+  var asset = null;
+  if (code === 0 && shared && shared.selectCoopModAsset) {
+    try {
+      var text = readTextFile(releaseJsonPath);
+      var data = $(text).dataUsingEncoding($.NSUTF8StringEncoding);
+      var obj = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, null);
+      if (obj) asset = shared.selectCoopModAsset(ObjC.deepUnwrap(obj));
+    } catch (eParse) {
+      asset = null;
+    }
+  }
+  releaseVersion = '';
+  releaseKnown = false;
+  if (asset && shared.releaseAssetVersionLabel) {
+    try { releaseVersion = String(shared.releaseAssetVersionLabel(asset.name, asset.tag) || ''); } catch (eVer) { releaseVersion = ''; }
+    releaseKnown = !!releaseVersion;
+  }
+  paintDownloadButton(!busy);
+}
+
+function startReleaseCheck() {
+  invalidateReleaseTimer();
+  if (quitting || releaseTask || releaseCheckFinished) return;
+  if (!shared || !shared.selectCoopModAsset) return;
+  var token = releaseToken;
+  releaseArmedToken = token;
+  releaseJsonPath = joinPath(tempDir(), 'duckov-releases-launch.json');
+  releaseErrPath = joinPath(tempDir(), 'duckov-releases-launch.err');
+  var outPath = joinPath(tempDir(), 'duckov-releases-launch.out');
+  var outHandle = null;
+  var errHandle = null;
+  try {
+    writeTextFile(outPath, '');
+    writeTextFile(releaseErrPath, '');
+    writeTextFile(releaseJsonPath, '');
+  } catch (eWrite) {}
+  var args = [
+    '/usr/bin/curl', '-fL', '--retry', '2', '--retry-delay', '1',
+    '--max-time', '45', '-sS',
+    '-A', 'DuckovCoopPrepare',
+    '-H', 'Accept: application/vnd.github+json',
+    '-o', releaseJsonPath,
+    RELEASES_API
+  ];
+  try {
+    releaseTask = objc(objc($.NSTask.alloc).init);
+    releaseTask.setLaunchPath($(args[0]));
+    var nsArgs = objc(objc($.NSMutableArray.alloc).init);
+    var i;
+    for (i = 1; i < args.length; i++) nsArgs.addObject($(String(args[i])));
+    releaseTask.setArguments(nsArgs);
+    outHandle = $.NSFileHandle.fileHandleForWritingAtPath($(outPath));
+    errHandle = $.NSFileHandle.fileHandleForWritingAtPath($(releaseErrPath));
+    if (outHandle) releaseTask.setStandardOutput(outHandle);
+    if (errHandle) releaseTask.setStandardError(errHandle);
+    attachTaskEnvironment(releaseTask, null);
+    objc(releaseTask.launch);
+    releaseOutHandle = outHandle;
+    releaseErrHandle = errHandle;
+  } catch (error) {
+    releaseTask = null;
+    try { if (outHandle) objc(outHandle.closeFile); } catch (eCloseOut) {}
+    try { if (errHandle) objc(errHandle.closeFile); } catch (eCloseErr) {}
+    completeReleaseCheck(token, 1);
+    return;
+  }
+  releaseDeadlineMs = Date.now() + RELEASE_CHECK_LIMIT_MS;
+  if (!taskIsRunning(releaseTask)) {
+    var quickCode = 1;
+    try { quickCode = taskExitCode(releaseTask); } catch (eQuick) { quickCode = 1; }
+    releaseTask = null;
+    closeReleaseHandles();
+    completeReleaseCheck(token, quickCode);
+    return;
+  }
+  releaseTimer = $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    0.2,
+    controller,
+    'releasePoll:',
+    null,
+    true
+  );
+}
+
+function onReleasePoll() {
+  var token = releaseArmedToken;
+  if (quitting || token !== releaseToken) {
+    invalidateReleaseTimer();
+    if (releaseTask && taskIsRunning(releaseTask)) {
+      try { objc(releaseTask.terminate); } catch (eTermEarly) {}
+    }
+    releaseTask = null;
+    closeReleaseHandles();
+    return;
+  }
+  var running = false;
+  try { running = taskIsRunning(releaseTask); } catch (eRun) { running = false; }
+  var timedOut = Date.now() > releaseDeadlineMs;
+  if (running && !timedOut) return;
+  invalidateReleaseTimer();
+  if (running) {
+    try { objc(releaseTask.terminate); } catch (eTerm) {}
+    releaseTask = null;
+    closeReleaseHandles();
+    appendLogFile('核对最新 Release 超时。下载按钮保持蓝色。\nChecking the latest Release timed out. The download button stays blue.\n');
+    completeReleaseCheck(token, 1);
+    return;
+  }
+  var code = 1;
+  try { code = taskExitCode(releaseTask); } catch (eCode) { code = 1; }
+  releaseTask = null;
+  closeReleaseHandles();
+  completeReleaseCheck(token, code);
+}
+
+function invalidateConfigTimer() {
+  if (!configTimer) return;
+  try { objc(configTimer.invalidate); } catch (e) {}
+  configTimer = null;
+}
+
+function closeConfigHandles() {
+  try { if (configOutHandle) objc(configOutHandle.closeFile); } catch (e1) {}
+  try { if (configErrHandle) objc(configErrHandle.closeFile); } catch (e2) {}
+  configOutHandle = null;
+  configErrHandle = null;
+}
+
+function cancelConfigCompare() {
+  configToken += 1;
+  invalidateConfigTimer();
+  if (configTask && taskIsRunning(configTask)) {
+    try { objc(configTask.terminate); } catch (e) {}
+  }
+  configTask = null;
+  closeConfigHandles();
+}
+
+function scheduleConfigCompare() {
+  if (quitting || !controller || !syncStateApi) return;
+  if (configTask) return;
+  invalidateConfigTimer();
+  configArmedToken = configToken;
+  configTimer = $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    0.05,
+    controller,
+    'startConfigCompare:',
+    null,
+    false
+  );
+}
+
+function queueConfigCompare() {
+  cancelConfigCompare();
+  if (!syncStateApi) return;
+  syncVisual = null;
+  configLoggedKey = '';
+  paintSyncButtons(!busy);
+  scheduleConfigCompare();
+}
+
+function applyConfigCompare(text) {
+  var parsed = null;
+  if (text && syncStateApi) {
+    try { parsed = syncStateApi.parseFingerprint(text); } catch (eParse) { parsed = null; }
+  }
+  if (!parsed || !text) {
+    syncVisual = { status: 'unknown', identical: false, toCoop: 'neutral', toOriginal: 'neutral', originalMtime: null, coopMtime: null };
+  } else {
+    syncVisual = syncStateApi.compareConfigSides(parsed.original, parsed.coop);
+  }
+  if (syncVisual.status === 'identical') stepDone[2] = true;
+  else if (syncVisual.status === 'different' || syncVisual.status === 'missing') stepDone[2] = false;
+  paintSyncButtons(!busy);
+  if (!busy) refreshGuide();
+  else paintStepHeaders();
+  var described = { zh: '', en: '' };
+  try { described = syncStateApi.describeCompare(syncVisual); } catch (eDesc) {}
+  var key = syncVisual.status + '|' + syncVisual.toCoop + '|' + syncVisual.toOriginal;
+  if (key !== configLoggedKey) {
+    configLoggedKey = key;
+    appendLogFile(described.zh + '\n' + described.en + '\n');
+    if (parsed && ((parsed.original && parsed.original.error === 'permission') || (parsed.coop && parsed.coop.error === 'permission'))) {
+      appendLogFile(fullDiskAccessText() + '\n');
+    }
+  }
+}
+
+function startConfigCompare() {
+  invalidateConfigTimer();
+  if (quitting || configTask || !syncStateApi) return;
+  if (configToken !== configArmedToken) return;
+  var script = joinPath(resources, 'config-fingerprint.sh');
+  if (!script || !fileExists(script)) {
+    appendLogFile('找不到配置比较脚本。同步按钮保持灰色。\nThe config compare script is missing. Sync buttons stay grey.\n');
+    return;
+  }
+  var token = configToken;
+  configOutPath = joinPath(tempDir(), 'duckov-config-fp.txt');
+  configErrPath = joinPath(tempDir(), 'duckov-config-fp.err');
+  var outHandle = null;
+  var errHandle = null;
+  try {
+    writeTextFile(configOutPath, '');
+    writeTextFile(configErrPath, '');
+  } catch (eWrite) {}
+  var args = ['/bin/bash', script, originalConfigDir(), coopConfigDir()];
+  try {
+    configTask = objc(objc($.NSTask.alloc).init);
+    configTask.setLaunchPath($(args[0]));
+    var nsArgs = objc(objc($.NSMutableArray.alloc).init);
+    var i;
+    for (i = 1; i < args.length; i++) nsArgs.addObject($(String(args[i])));
+    configTask.setArguments(nsArgs);
+    outHandle = $.NSFileHandle.fileHandleForWritingAtPath($(configOutPath));
+    errHandle = $.NSFileHandle.fileHandleForWritingAtPath($(configErrPath));
+    if (outHandle) configTask.setStandardOutput(outHandle);
+    if (errHandle) configTask.setStandardError(errHandle);
+    attachTaskEnvironment(configTask, null);
+    objc(configTask.launch);
+    configOutHandle = outHandle;
+    configErrHandle = errHandle;
+  } catch (error) {
+    configTask = null;
+    try { if (outHandle) objc(outHandle.closeFile); } catch (eCloseOut) {}
+    try { if (errHandle) objc(errHandle.closeFile); } catch (eCloseErr) {}
+    applyConfigCompare('');
+    return;
+  }
+  configDeadlineMs = Date.now() + CONFIG_COMPARE_LIMIT_MS;
+  if (!taskIsRunning(configTask)) {
+    var quickCode = 1;
+    try { quickCode = taskExitCode(configTask); } catch (eQuick) { quickCode = 1; }
+    configTask = null;
+    closeConfigHandles();
+    if (token !== configToken) return;
+    applyConfigCompare(quickCode === 0 ? readTextFile(configOutPath) : '');
+    return;
+  }
+  configTimer = $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
+    0.2,
+    controller,
+    'configPoll:',
+    null,
+    true
+  );
+}
+
+function onConfigPoll() {
+  var token = configArmedToken;
+  if (quitting || configToken !== token) {
+    invalidateConfigTimer();
+    if (configTask && taskIsRunning(configTask)) {
+      try { objc(configTask.terminate); } catch (eTerm) {}
+    }
+    configTask = null;
+    closeConfigHandles();
+    return;
+  }
+  var running = false;
+  try { running = taskIsRunning(configTask); } catch (eRun) { running = false; }
+  var timedOut = Date.now() > configDeadlineMs;
+  if (running && !timedOut) return;
+  invalidateConfigTimer();
+  if (running) {
+    try { objc(configTask.terminate); } catch (eTerm2) {}
+    configTask = null;
+    closeConfigHandles();
+    appendLogFile('比较配置文件夹超时，同步按钮保持灰色。\nComparing the config folders timed out. The sync buttons stay grey.\n');
+    syncVisual = { status: 'unknown', identical: false, toCoop: 'neutral', toOriginal: 'neutral', originalMtime: null, coopMtime: null };
+    paintSyncButtons(!busy);
+    return;
+  }
+  var code = 1;
+  try { code = taskExitCode(configTask); } catch (eCode) { code = 1; }
+  configTask = null;
+  closeConfigHandles();
+  if (token !== configToken) return;
+  applyConfigCompare(code === 0 ? readTextFile(configOutPath) : '');
 }
 
 function buildInterface(app) {
@@ -2328,13 +3052,14 @@ function buildInterface(app) {
   if (!(prepareLine > 0)) prepareLine = 18;
   var prepareH = Math.ceil(prepareLine * 2 + 20);
   if (prepareH < 62) prepareH = 62;
-  var prepareW = contentW;
+  var prepareW = Math.round(contentW * BIG_BUTTON_WIDTH_RATIO);
   var prepareTopGap = 6;
   var explainGap = 6;
-  var configBtnH = 30;
+  var configOpenH = CONFIG_OPEN_BUTTON_HEIGHT;
+  var syncBtnH = SYNC_BUTTON_HEIGHT;
   var configBtnGapY = 6;
   var fieldGap = 6;
-  var downloadH = DOWNLOAD_BUTTON_HEIGHT;
+  var downloadH = prepareH;
   var progressH = 16;
   var progressGap = 4;
   var logH = 96;
@@ -2385,7 +3110,7 @@ function buildInterface(app) {
     + githubH + githubGap
     + boxPadTop + statusTitleH + 4 + statusBodyH + boxPadBottom + boxGap
     + boxPadTop + step1HeaderH + headerGap + step1HelpH + helpGap + pathGroup + pathRowGap + pathGroup + prepareTopGap + prepareH + boxPadBottom + boxGap
-    + boxPadTop + step2HeaderH + headerGap + explainH + explainGap + configBtnH + configBtnGapY + configBtnH + boxPadBottom + boxGap
+    + boxPadTop + step2HeaderH + headerGap + explainH + explainGap + configOpenH + configBtnGapY + syncBtnH + boxPadBottom + boxGap
     + boxPadTop + step3HeaderH + headerGap + step3HelpH + helpGap + pathRowH + fieldGap + downloadH + boxPadBottom + boxGap
     + progressH + progressGap
     + logH
@@ -2532,28 +3257,42 @@ function buildInterface(app) {
   try { explain.setFont($.NSFont.systemFontOfSize(11)); } catch (eExplainFont) {}
   var configBtnGap = 8;
   var configBtnW = Math.floor((contentW - configBtnGap) / 2);
-  var openConfigY = row(configBtnH, configBtnGapY);
-  openOriginalConfigButton = makeButton(
-    '打开原版配置位置 / Open original config folder',
-    contentX, openConfigY, configBtnW, configBtnH, 'openOriginalConfig:', 12
+  var openConfigY = row(configOpenH, configBtnGapY);
+  var openOriginalParts = makeFlatButton(
+    contentX, openConfigY, configBtnW, configOpenH, 'openOriginalConfig:',
+    '打开原版配置位置 / Open original config folder'
   );
-  openCoopConfigButton = makeButton(
-    '打开联机副本配置位置 / Open co-op config folder',
-    contentX + configBtnW + configBtnGap, openConfigY, configBtnW, configBtnH, 'openCoopConfig:', 12
+  var openCoopParts = makeFlatButton(
+    contentX + configBtnW + configBtnGap, openConfigY, configBtnW, configOpenH, 'openCoopConfig:',
+    '打开联机副本配置位置 / Open co-op config folder'
   );
-  var syncConfigY = row(configBtnH, 0);
-  syncToCoopButton = makeButton(
-    SYNC_TO_COOP_TITLE,
-    contentX, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 11
+  openOriginalFill = openOriginalParts.fill;
+  openCoopFill = openCoopParts.fill;
+  openOriginalConfigButton = openOriginalParts.button;
+  openCoopConfigButton = openCoopParts.button;
+  var syncConfigY = row(syncBtnH, 0);
+  var syncToCoopParts = makeFlatButton(
+    contentX, syncConfigY, configBtnW, syncBtnH, 'syncOriginalToCoop:',
+    SYNC_TO_COOP_TITLE
   );
-  syncToOriginalButton = makeButton(
-    SYNC_TO_ORIGINAL_TITLE,
-    contentX + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 11
+  var syncToOriginalParts = makeFlatButton(
+    contentX + configBtnW + configBtnGap, syncConfigY, configBtnW, syncBtnH, 'syncCoopToOriginal:',
+    SYNC_TO_ORIGINAL_TITLE
   );
+  syncToCoopFill = syncToCoopParts.fill;
+  syncToOriginalFill = syncToOriginalParts.fill;
+  syncToCoopButton = syncToCoopParts.button;
+  syncToOriginalButton = syncToOriginalParts.button;
+  if (openOriginalFill) content.addSubview(openOriginalFill);
+  if (openCoopFill) content.addSubview(openCoopFill);
+  if (syncToCoopFill) content.addSubview(syncToCoopFill);
+  if (syncToOriginalFill) content.addSubview(syncToOriginalFill);
   content.addSubview(openOriginalConfigButton);
   content.addSubview(openCoopConfigButton);
   content.addSubview(syncToCoopButton);
   content.addSubview(syncToOriginalButton);
+  paintOpenConfigButtons();
+  paintSyncButtons(true);
   endSection(0.985, 0.99, 0.995, 0.45, 0.55, 0.68);
 
   beginSection();
@@ -2578,9 +3317,15 @@ function buildInterface(app) {
   content.addSubview(clearModsButton);
 
   var downloadY = row(downloadH, 0);
-  downloadButton = makeButton(DOWNLOAD_MOD_TITLE, contentX, downloadY, contentW, downloadH, 'downloadMod:', 13);
+  var downloadParts = makeFlatButton(
+    prepareX, downloadY, prepareW, prepareH, 'downloadMod:',
+    DOWNLOAD_MOD_TITLE
+  );
+  downloadFill = downloadParts.fill;
+  downloadButton = downloadParts.button;
+  if (downloadFill) content.addSubview(downloadFill);
   content.addSubview(downloadButton);
-  styleDownloadButton(downloadButton);
+  paintDownloadButton(true);
   endSection(0.985, 0.99, 0.995, 0.45, 0.55, 0.68);
 
   var progressY = row(progressH, progressGap);
@@ -2611,12 +3356,20 @@ function buildInterface(app) {
   detectExistingProgress();
   refreshGuide();
   replaceLog(introText());
+  try { mainWindow.setInitialFirstResponder(null); } catch (eInitFocus) {}
   objc(mainWindow.center);
   mainWindow.makeKeyAndOrderFront(app);
   app.activateIgnoringOtherApps(true);
+  clearInitialFocus();
+  armFocusClear();
   paintPrepareButton(true);
-  // Mod listing starts on the run loop, after this window is ordered front.
+  // Mod listing, the Release check, and the config compare start on the run
+  // loop, after this window is ordered front.
   scheduleDestModScan();
+  scheduleReleaseCheck();
+  scheduleConfigCompare();
+  paintDownloadButton(true);
+  paintSyncButtons(true);
 }
 function startApp() {
   var env = runtimeEnv();
@@ -2631,6 +3384,12 @@ function startApp() {
   } catch (error) {
     shared = null;
     matcherError = String(error);
+  }
+  try {
+    syncStateApi = loadSyncState(resources);
+  } catch (error) {
+    syncStateApi = null;
+    syncStateError = String(error);
   }
   registerController();
   var app = objc($.NSApplication.sharedApplication);
