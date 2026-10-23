@@ -149,19 +149,19 @@ function parentDir(path) {
 }
 
 function configExplanation() {
-  var loc1 = '~/Library/Containers/' + DUCKOV_BUNDLE_ID + '/Data/Library/Application Support/' + DUCKOV_BUNDLE_ID;
-  var loc2 = '~/Library/Application Support/' + DUCKOV_BUNDLE_ID;
+  var originalConfig = '~/Library/Containers/' + DUCKOV_BUNDLE_ID + '/Data/Library/Application Support/' + DUCKOV_BUNDLE_ID;
+  var coopConfig = '~/Library/Application Support/' + DUCKOV_BUNDLE_ID;
   return [
-    '同一 Bundle ID（' + DUCKOV_BUNDLE_ID + '）。原版开启 App Sandbox，配置在位置1；联机副本关闭沙盒，配置在位置2。由沙盒开关决定，与 .app 放在哪个文件夹无关。文件夹里通常有 Saves/、Mods 配置等。同步前请先退出两边的游戏。',
-    'Same bundle id (' + DUCKOV_BUNDLE_ID + '). Location 1 is the sandboxed original. Location 2 is the co-op copy with App Sandbox off. The split is sandbox on versus off, not where the .app file lives. Folders usually hold Saves/ and Mods configs. Quit both games before syncing.',
-    '位置1 / Location 1 — 原版沙盒配置：' + loc1,
-    '位置2 / Location 2 — 联机副本配置：' + loc2
+    '同一 Bundle ID（' + DUCKOV_BUNDLE_ID + '）。原版开着 App Sandbox，配置在原版配置位置；联机副本关掉沙盒，配置在联机副本配置位置。差别是沙盒开关，不是 .app 放在哪。里面通常有 Saves/、Mods 配置。同步前请退出两边的游戏。',
+    'Same bundle id (' + DUCKOV_BUNDLE_ID + '). Sandbox on: original config folder. Sandbox off: co-op config folder. Not where the .app lives. Usually holds Saves/ and Mods configs. Quit both games before syncing.',
+    '原版配置位置 / original config folder: ' + originalConfig,
+    '联机副本配置位置 / co-op config folder: ' + coopConfig
   ].join('\n');
 }
 
 function fullDiskAccessText() {
-  return '请打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」，加入 DuckovCoopPrepare.app，然后重试。读取原版沙盒容器（位置1）时，系统经常会拒绝未授权的应用。\n'
-    + 'Open System Settings → Privacy & Security → Full Disk Access, add DuckovCoopPrepare.app, then try again. macOS often blocks unapproved apps from reading the original sandbox container (Location 1).';
+  return '请打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」，加入 DuckovCoopPrepare.app，然后重试。读取原版配置位置（~/Library/Containers 里的沙盒容器）时，系统经常会拒绝未授权的应用。\n'
+    + 'Open System Settings → Privacy & Security → Full Disk Access, add DuckovCoopPrepare.app, then try again. macOS often blocks unapproved apps from reading the original config folder (the sandbox container under ~/Library/Containers).';
 }
 
 function runtimeEnv() {
@@ -309,12 +309,43 @@ function firstButtonCode() {
 }
 
 function showConfirm(title, info, okTitle, cancelTitle) {
+  return showChoices(title, info, [okTitle, cancelTitle]) === 0;
+}
+
+function showChoices(title, info, titles) {
   var alert = objc(objc($.NSAlert.alloc).init);
   alert.setMessageText($(title));
   alert.setInformativeText($(info));
-  alert.addButtonWithTitle($(okTitle));
-  alert.addButtonWithTitle($(cancelTitle));
-  return asNumber(alert.runModal) === firstButtonCode();
+  var i;
+  for (i = 0; i < titles.length; i++) alert.addButtonWithTitle($(titles[i]));
+  var code = asNumber(objc(alert.runModal));
+  var index = code - firstButtonCode();
+  if (index < 0 || index >= titles.length) return 0;
+  return index;
+}
+
+function showPrepareDoneAlert() {
+  var dest = fieldText(destField);
+  var info = [
+    '副本已准备好。请只启动这份副本进行联机。不要把 Mods 放进原版 App。',
+    '各方的 ModVersion 必须完全一致。',
+    '',
+    'The co-op copy is ready. Launch only this copy for co-op. Do not put Mods in the original app.',
+    'Every peer must use the exact same ModVersion string.',
+    '',
+    dest,
+    '',
+    '要现在把原版配置位置同步到联机副本配置位置吗？这和窗口里的「（同步文件）原版配置 → 联机副本」是同一次操作：用来源镜像覆盖目标，并删除目标里多出来的文件。',
+    '请先完全退出原版 Duckov 和联机副本。',
+    'Sync the original config folder onto the co-op config folder now? This is the same action as "(sync files) original → co-op": it mirrors the source onto the destination and deletes files that exist only there.',
+    'Quit the original Duckov app and the co-op copy first.'
+  ].join('\n');
+  var choice = showChoices('完成 / Done', info, [
+    '好 / OK',
+    '立即同步 / Sync now',
+    '不同步 / Don\'t sync'
+  ]);
+  if (choice === 1) onSync('1to2', true);
 }
 
 function guard(fn) {
@@ -385,8 +416,8 @@ function introText() {
     '   Confirm the original Duckov.app. Default: /Applications/Duckov.app.',
     '2. 指定要保存游戏副本的位置。默认是 ~/Applications/Duckov-COOP.app。今后要联机则打开这个副本。原版不会被修改。',
     '   Choose where the co-op copy is saved. Default: ~/Applications/Duckov-COOP.app. Launch this copy for co-op. The original app is not modified.',
-    '3. 可选：在 Mods 区域选择已解压的 Mods 文件夹，或下载最新测试 Mod。留空也可以。',
-    '   Optional: in the Mods section, choose an unzipped Mods folder, or download the latest test mod. Empty is fine.',
+    '3. 可选：在「要新增加的 Mods 文件夹」选择已解压的 Mods，或点「下载最新测试 Mac 联机 Mod」。留空也可以。',
+    '   Optional: choose an unzipped Mods folder, or click Download latest test Mac co-op mod. Empty is fine.',
     '4. 点击窗口最下方的「准备联机副本 / Prepare co-op copy」。复制游戏时可能需要几分钟。',
     '   Click Prepare co-op copy at the bottom of the window. Copying the game can take several minutes.',
     '5. 原版和联机副本的存档不在同一个文件夹。见窗口里的「配置与存档」。同步前请退出两边的游戏。',
@@ -456,7 +487,7 @@ function lookupAsset() {
     RELEASES_API
   ]);
   if (!result || result.code !== 0) {
-    throw new Error('无法访问 GitHub Releases。请检查网络，或点「打开 Releases 页面」手动下载。\nCould not reach GitHub Releases. Check the network, or click Open Releases and download the zip yourself.\n\n' + (result ? result.stderr : ''));
+    throw new Error('无法访问 GitHub Releases。请检查网络，或点「打开 GitHub 页面」手动下载。\nCould not reach GitHub Releases. Check the network, or click Open GitHub and download the zip yourself.\n\n' + (result ? result.stderr : ''));
   }
   var text = readTextFile(jsonPath);
   if (!text) throw new Error('Releases 响应是空的。 / The Releases response was empty.');
@@ -505,7 +536,7 @@ function finishTask() {
     setBusy(false);
     showAlert(
       '下载失败 / Download failed',
-      '没有完成下载或解压。请查看日志，或打开 Releases 页面手动下载。\n\nDownload or unzip did not finish. Read the log, or open the Releases page and download the zip manually.'
+      '没有完成下载或解压。请查看日志，或打开 GitHub 页面手动下载。\n\nDownload or unzip did not finish. Read the log, or open the GitHub page and download the zip manually.'
     );
     return;
   }
@@ -544,10 +575,7 @@ function finishTask() {
     appendLogFile('\n退出码 / Exit code: 0\n完成 / Done\n');
     setStatus('完成。副本已准备好。 / Done. The co-op copy is ready.', true);
     setBusy(false);
-    showAlert(
-      '完成 / Done',
-      '副本已准备好。请只启动这份副本进行联机。不要把 Mods 放进原版 App。\n各方的 ModVersion 必须完全一致。\n\nThe co-op copy is ready. Launch only this copy for co-op. Do not put Mods in the original app.\nEvery peer must use the exact same ModVersion string.\n\n' + fieldText(destField)
-    );
+    showPrepareDoneAlert();
     return;
   }
   appendLogFile('\n退出码 / Exit code: ' + code + '\n未完成 / Did not finish\n原版 App 没有被修改。 / The original app was not modified.\n');
@@ -690,8 +718,8 @@ function onOpenOriginalConfig() {
   if (!fileExists(path)) {
     showAlert(
       '找不到原版配置位置 / Original config folder was not found',
-      '位置1 / Location 1 — 原版沙盒配置还不存在。请先至少启动一次原版 Duckov.app，让系统生成沙盒容器后再试。不会自动创建这个文件夹。\n'
-      + 'Location 1 does not exist yet. Launch the original Duckov.app once so macOS can create the sandbox container, then try again. This folder is not created automatically.\n\n'
+      '原版配置位置还不存在。请先至少启动一次原版 Duckov.app，让系统生成沙盒容器后再试。不会自动创建这个文件夹。\n'
+      + 'The original config folder does not exist yet. Launch the original Duckov.app once so macOS can create the sandbox container, then try again. This folder is not created automatically.\n\n'
       + path
     );
     return;
@@ -700,7 +728,7 @@ function onOpenOriginalConfig() {
     showAlert('无法打开 / Could not open', path);
     return;
   }
-  setStatus('已打开位置1 / 原版沙盒配置。 / Opened Location 1 (original sandbox config).', true);
+  setStatus('已打开原版配置位置。 / Opened the original config folder.', true);
 }
 
 function onOpenCoopConfig() {
@@ -718,24 +746,22 @@ function onOpenCoopConfig() {
     showAlert('无法打开 / Could not open', path);
     return;
   }
-  setStatus('已打开位置2 / 联机副本配置。 / Opened Location 2 (co-op config).', true);
+  setStatus('已打开联机副本配置位置。 / Opened the co-op config folder.', true);
 }
 
-function onSync(direction) {
+function onSync(direction, skipConfirm) {
   if (busy || quitting) return;
   var toCoop = direction === '1to2';
   var src = toCoop ? originalConfigDir() : coopConfigDir();
   var dest = toCoop ? coopConfigDir() : originalConfigDir();
-  var title = toCoop
-    ? '原版配置 → 联机副本 / Sync original → co-op'
-    : '联机副本 → 原版配置 / Sync co-op → original';
+  var title = toCoop ? SYNC_TO_COOP_TITLE : SYNC_TO_ORIGINAL_TITLE;
   var flag = toCoop ? 'original-to-coop' : 'coop-to-original';
   if (!fileExists(src)) {
     var missing = '找不到来源文件夹。 / Source folder was not found.\n\n' + src + '\n\n';
     if (toCoop) {
-      missing += '位置1（原版沙盒配置）还不存在。请先至少启动一次原版 Duckov.app。\nLocation 1 (original sandbox config) does not exist yet. Launch the original Duckov.app at least once.';
+      missing += '原版配置位置还不存在。请先至少启动一次原版 Duckov.app。\nThe original config folder does not exist yet. Launch the original Duckov.app at least once.';
     } else {
-      missing += '位置2（联机副本配置）还不存在。可以先点「打开联机副本配置位置」创建空文件夹，或先启动一次联机副本。\nLocation 2 (co-op config) does not exist yet. Click Open co-op config folder to create it, or launch the co-op copy once.';
+      missing += '联机副本配置位置还不存在。可以先点「打开联机副本配置位置」创建空文件夹，或先启动一次联机副本。\nThe co-op config folder does not exist yet. Click Open co-op config folder to create it, or launch the co-op copy once.';
     }
     showAlert('找不到来源文件夹 / Source folder was not found', missing);
     return;
@@ -753,14 +779,14 @@ function onSync(direction) {
     + '这会用来源的内容镜像覆盖目标，并删除目标里多出来的文件（包括 Saves/、Mods 配置等）。\n'
     + 'This mirrors the source onto the destination and deletes files that exist only in the destination (including Saves/ and Mods configs).\n\n';
   if (toCoop) {
-    info += '目标是位置2（联机副本配置）。副本的存档会被换成原版里的内容。\n'
-      + 'The destination is Location 2 (co-op config). Saves in the co-op copy will be replaced by the original game.\n\n';
+    info += '目标是联机副本配置位置。副本的存档会被换成原版里的内容。\n'
+      + 'The destination is the co-op config folder. Saves in the co-op copy will be replaced by the original game.\n\n';
   } else {
-    info += '目标是位置1（原版沙盒配置）。原版游戏的存档会被换成副本里的内容。\n'
-      + 'The destination is Location 1 (original sandbox config). Saves in the original game will be replaced by the co-op copy.\n\n';
+    info += '目标是原版配置位置。原版游戏的存档会被换成副本里的内容。\n'
+      + 'The destination is the original config folder. Saves in the original game will be replaced by the co-op copy.\n\n';
   }
   info += '从 / From:\n' + src + '\n\n到 / To:\n' + dest;
-  if (!showConfirm(title, info, '开始同步 / Start sync', '取消 / Cancel')) {
+  if (!skipConfirm && !showConfirm(title, info, '开始同步 / Start sync', '取消 / Cancel')) {
     setStatus('已取消。 / Cancelled.', null);
     return;
   }
@@ -861,7 +887,7 @@ function onDownload() {
   }
   if (!asset) {
     setBusy(false);
-    var missing = '没有找到 EscapeFromDuckovCoopMod*.zip。\n请打开 Releases 页面手动下载。\n\nNo EscapeFromDuckovCoopMod*.zip asset was found.\nOpen the Releases page and download it manually.';
+    var missing = '没有找到 EscapeFromDuckovCoopMod*.zip。\n请打开 GitHub 页面手动下载。\n\nNo EscapeFromDuckovCoopMod*.zip asset was found.\nOpen the GitHub page and download it manually.';
     setStatus('没有找到测试 Mod。 / No test mod was found.', false);
     appendLogFile(missing);
     showAlert('没有找到测试 Mod / No test mod was found', missing);
@@ -1038,66 +1064,61 @@ function secondaryTextColor() {
   return rgb(0.35, 0.35, 0.35);
 }
 
-// AppKit 的 NSTextAlignmentRight 在 arm64 上是 2，在 x86_64 上是 1。
-// 写死 2 会在 Apple Silicon 上把标题排到按钮右侧并裁掉开头。
-// 这里按名字取 NSTextAlignmentCenter，用当前进程里的正确数值。
-// NSTextAlignmentRight is 2 on arm64 and 1 on x86_64.
-// A literal 2 pins the title to the right edge on Apple Silicon and clips it.
-// Resolve NSTextAlignmentCenter by name so this process gets the correct value.
-function appKitTextAlignment(which) {
-  var keys = {
-    left: 'NSTextAlignmentLeft',
-    center: 'NSTextAlignmentCenter',
-    right: 'NSTextAlignmentRight'
-  };
-  var raw = null;
-  try { raw = $[keys[which] || keys.left]; } catch (e) { raw = null; }
-  if (typeof raw === 'number' && !isNaN(raw)) return raw;
-  if (raw != null && typeof raw !== 'function') {
-    var n = Number(raw);
-    if (!isNaN(n)) return n;
-  }
-  var right = null;
-  try { right = $.NSTextAlignmentRight; } catch (e2) { right = null; }
-  var rightNum = typeof right === 'number' ? right : Number(right);
-  if (isNaN(rightNum)) rightNum = 2;
-  var centerNum = rightNum === 1 ? 2 : 1;
-  if (which === 'center') return centerNum;
-  if (which === 'right') return rightNum === 1 ? 1 : 2;
-  return 0;
-}
-
-function imagePositionNone() {
+function readSize(value) {
+  var w = 0;
+  var h = 0;
   try {
-    var raw = $.NSNoImage;
-    if (typeof raw === 'number' && !isNaN(raw)) return raw;
-    if (raw != null && typeof raw !== 'function') {
-      var n = Number(raw);
-      if (!isNaN(n)) return n;
-    }
+    w = Number(value.width);
+    h = Number(value.height);
   } catch (e) {}
-  return 0;
+  if (w > 0 && h > 0) return { width: w, height: h };
+  var raw = '';
+  try { raw = String(value); } catch (e2) { raw = ''; }
+  var match = raw.match(/([\d.]+)\s*,\s*([\d.]+)/);
+  if (match) return { width: Number(match[1]), height: Number(match[2]) };
+  return { width: w > 0 ? w : 0, height: h > 0 ? h : 0 };
 }
 
-function attributedTitle(title, font, color, underline, align) {
-  var text = String(title);
-  var str = objc($.NSMutableAttributedString.alloc).initWithString($(text));
-  if (!str) throw new Error('attributed string');
-  var range = $.NSMakeRange(0, text.length);
-  if (font) str.addAttributeValueRange($.NSFontAttributeName, font, range);
-  if (color) str.addAttributeValueRange($.NSForegroundColorAttributeName, color, range);
-  if (underline) str.addAttributeValueRange($.NSUnderlineStyleAttributeName, $(1), range);
-  if (align != null) {
-    var style = objc(objc($.NSMutableParagraphStyle.alloc).init);
-    style.setAlignment(align);
-    try {
-      var mode = $.NSLineBreakByTruncatingTail;
-      if (typeof mode !== 'number') mode = 4;
-      style.setLineBreakMode(mode);
-    } catch (eBreak) {}
-    str.addAttributeValueRange($.NSParagraphStyleAttributeName, style, range);
+function viewSize(view, fallbackW, fallbackH) {
+  try {
+    var frame = objc(view.frame);
+    var size = frame && frame.size ? frame.size : frame;
+    var got = readSize(size);
+    if (got.width > 0 && got.height > 0) return got;
+  } catch (e) {}
+  return { width: fallbackW, height: fallbackH };
+}
+
+function measureText(text, font) {
+  try {
+    var ns = objc($.NSString.alloc).initWithString($(String(text)));
+    var attrs = objc($.NSMutableDictionary.alloc).init;
+    if (font) attrs.setObjectForKey(font, $.NSFontAttributeName);
+    return readSize(objc(ns.sizeWithAttributes(attrs)));
+  } catch (e) {
+    return { width: 0, height: 0 };
   }
-  return str;
+}
+
+// NSImageOnly is 1 on every ABI. NSTextAlignment is not: arm64 AppKit uses
+// center=1 and right=2, while the JXA named constant NSTextAlignmentCenter
+// still comes back as the legacy 2. That 2 right-aligns the title and clips it.
+function imagePositionOnly() {
+  try {
+    var raw = $.NSImageOnly;
+    var n = typeof raw === 'number' ? raw : Number(unwrap(raw));
+    if (!isNaN(n)) return n;
+  } catch (e) {}
+  return 1;
+}
+
+function imageScaleFit() {
+  try {
+    var raw = $.NSImageScaleProportionallyUpOrDown;
+    var n = typeof raw === 'number' ? raw : Number(unwrap(raw));
+    if (!isNaN(n)) return n;
+  } catch (e) {}
+  return 3;
 }
 
 function paintLayer(view, r, g, b, radius) {
@@ -1116,32 +1137,89 @@ function paintLayer(view, r, g, b, radius) {
 
 var PREPARE_BUTTON_TITLE = '准备联机副本 / Prepare co-op copy';
 var PREPARE_TITLE_SIZE = 14;
+var SYNC_TO_COOP_TITLE = '（同步文件）原版配置 → 联机副本 / (sync files) original → co-op';
+var SYNC_TO_ORIGINAL_TITLE = '（同步文件）联机副本 → 原版配置 / (sync files) co-op → original';
+var DOWNLOAD_MOD_TITLE = '下载最新测试 Mac 联机 Mod / Download latest test Mac co-op mod';
+var OPEN_GITHUB_TITLE = '打开 GitHub 页面 / Open GitHub';
+var MODS_FIELD_LABEL = '要新增加的 Mods 文件夹（可选）';
+var MODS_FIELD_ENGLISH = 'Extra Mods folder to add (optional)';
+var MODS_FIELD_HELP = '含 .dll 的最外层文件夹会整包拷入副本 Contents/Mods/包名/；没有 .dll 的和根目录散文件不拷。留空则不装新 Mod，已有的会放回。\nCopies each outermost .dll folder whole into Contents/Mods/<name>/; skips the rest. Empty: no new mods; existing Mods are restored.';
+
+// 不用 attributedTitle 的段落对齐。arm64 上按名字取出的
+// NSTextAlignmentCenter 仍是旧值 2，而当前 AppKit 把 2 当成右对齐，
+// 标题会从按钮中部往右画，末尾被裁掉，左边一大块是空的。
+// 这里把文字按测得的宽高画进一张和按钮一样大的透明图，几何居中，
+// 再作为 NSImageOnly 交给按钮。不写 NSTextAlignment。
+// Do not center with an attributed paragraph style. On arm64 the named
+// NSTextAlignmentCenter constant is still the legacy value 2, and AppKit
+// treats 2 as right alignment, so the title starts mid-button and the tail
+// is clipped. Draw the title into a transparent image the size of the button,
+// centered by measured width and height, and show that image with NSImageOnly.
+function makeCenteredTitleImage(title, font, color, width, height) {
+  var image = objc($.NSImage.alloc).initWithSize($.NSMakeSize(width, height));
+  try { image.setTemplate(false); } catch (e0) {}
+  var locked = false;
+  try {
+    objc(image.lockFocus);
+    locked = true;
+    var ns = objc($.NSString.alloc).initWithString($(String(title)));
+    var attrs = objc($.NSMutableDictionary.alloc).init;
+    if (font) attrs.setObjectForKey(font, $.NSFontAttributeName);
+    if (color) attrs.setObjectForKey(color, $.NSForegroundColorAttributeName);
+    var measured = measureText(title, font);
+    var tw = measured.width > 0 ? measured.width : width;
+    var th = measured.height > 0 ? measured.height : PREPARE_TITLE_SIZE + 4;
+    var x = Math.round((width - tw) / 2);
+    var y = Math.round((height - th) / 2);
+    ns.drawAtPointWithAttributes($.NSMakePoint(x, y), attrs);
+  } catch (e1) {
+    if (locked && image) {
+      try { objc(image.unlockFocus); } catch (eUnlock) {}
+      locked = false;
+    }
+    image = null;
+  }
+  if (locked && image) {
+    try { objc(image.unlockFocus); } catch (e2) {}
+  }
+  return image;
+}
 
 function stylePrimaryTitle(button) {
   if (!button) return;
-  var center = appKitTextAlignment('center');
-  var noImage = imagePositionNone();
-  try { button.setAlignment(center); } catch (e1) {}
-  try { button.setImagePosition(noImage); } catch (e2) {}
+  var font = $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE);
+  var bounds = viewSize(button, 460, 34);
+  var image = null;
+  try {
+    image = makeCenteredTitleImage(
+      PREPARE_BUTTON_TITLE,
+      font,
+      $.NSColor.whiteColor,
+      bounds.width,
+      bounds.height
+    );
+  } catch (e0) {
+    image = null;
+  }
+  try { button.setAttributedTitle(objc($.NSAttributedString.alloc).initWithString($(''))); } catch (e1) {}
+  if (!image) {
+    try { button.setTitle($(PREPARE_BUTTON_TITLE)); } catch (e2) {}
+    return;
+  }
+  try { button.setTitle($('')); } catch (e3) {}
+  try { image.setTemplate(false); } catch (e4) {}
+  try { button.setImage(image); } catch (e5) {}
+  var only = imagePositionOnly();
+  var fit = imageScaleFit();
+  try { button.setImagePosition(only); } catch (e6) {}
+  try { button.setImageScaling(fit); } catch (e7) {}
   try {
     var cell = objc(button.cell);
-    cell.setAlignment(center);
-    cell.setImagePosition(noImage);
-  } catch (e3) {}
-  try {
-    // 段落对齐必须是 Center 这个名字对应的值。按钮 cell 的 setAlignment
-    // 会被 attributedTitle 盖掉；写死 2 在 arm64 上是右对齐。
-    // Paragraph alignment has to be the named center value. The cell's
-    // setAlignment is ignored once an attributed title is set, and a literal
-    // 2 is right alignment on arm64.
-    button.setAttributedTitle(attributedTitle(
-      PREPARE_BUTTON_TITLE,
-      $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE),
-      $.NSColor.whiteColor,
-      false,
-      center
-    ));
-  } catch (e4) {}
+    cell.setImagePosition(only);
+    cell.setImageScaling(fit);
+    cell.setBordered(false);
+  } catch (e8) {}
+  try { button.setAccessibilityLabel($(PREPARE_BUTTON_TITLE)); } catch (e9) {}
 }
 
 function paintPrepareButton(enabled) {
@@ -1337,51 +1415,55 @@ function registerController() {
 }
 
 function buildInterface(app) {
-  var windowWidth = 780;
+  var windowWidth = 960;
   var margin = 20;
   var inner = windowWidth - margin * 2;
-  var topInset = 12;
-  var headerH = 32;
-  var headerGap = 4;
-  var introH = 50;
-  var introGap = 6;
-  var captionZhH = 22;
-  var captionZhGap = 2;
-  var captionEnH = 18;
-  var captionEnGap = 4;
+  var topInset = 10;
+  var headerH = 30;
+  var headerGap = 2;
+  var introH = 40;
+  var introGap = 4;
+  var captionZhH = 20;
+  var captionZhGap = 1;
+  var captionEnH = 16;
+  var captionEnGap = 2;
   var pathRowH = 30;
-  var pathRowGap = 6;
-  var modsTitleChrome = 22;
-  var modsAfterTitle = 4;
+  var pathRowGap = 2;
+  var modsTitleChrome = 20;
+  var modsAfterTitle = 2;
   var modsLabelH = 18;
-  var modsGap1 = 4;
+  var modsLabelGap = 1;
+  var modsEnH = 16;
+  var modsEnGap = 2;
+  var modsHelpH = 36;
+  var modsHelpGap = 4;
   var modsRowH = 30;
-  var modsGap2 = 6;
+  var modsGap2 = 4;
   var downloadH = 30;
-  var modsPadBottom = 8;
-  var modsBoxH = modsTitleChrome + modsAfterTitle + modsLabelH + modsGap1 + modsRowH + modsGap2 + downloadH + modsPadBottom;
-  var modsBoxGap = 6;
-  var configTitleChrome = 22;
-  var configAfterTitle = 4;
-  var configExplainH = 144;
-  var configGapA = 6;
-  var configBtnH = 30;
-  var configGapB = 6;
-  var configPadBottom = 8;
+  var modsPadBottom = 6;
+  var modsBoxH = modsTitleChrome + modsAfterTitle + modsLabelH + modsLabelGap + modsEnH + modsEnGap + modsHelpH + modsHelpGap + modsRowH + modsGap2 + downloadH + modsPadBottom;
+  var modsBoxGap = 2;
+  var configTitleChrome = 20;
+  var configAfterTitle = 2;
+  var configExplainH = 118;
+  var configGapA = 4;
+  var configBtnH = 32;
+  var configGapB = 4;
+  var configPadBottom = 4;
   var configBoxH = configTitleChrome + configAfterTitle + configExplainH + configGapA + configBtnH + configGapB + configBtnH + configPadBottom;
-  var configSectionGap = 6;
-  var statusH = 36;
-  var statusGap = 4;
-  var progressH = 18;
-  var progressGap = 4;
-  var prepareH = 32;
-  var prepareW = 380;
-  var prepareGap = 10;
-  var prepareBottom = 14;
-  var logH = 204;
+  var configSectionGap = 2;
+  var statusH = 32;
+  var statusGap = 2;
+  var progressH = 16;
+  var progressGap = 2;
+  var prepareH = 34;
+  var prepareW = 460;
+  var prepareGap = 8;
+  var prepareBottom = 12;
+  var logH = 188;
   var pathBlock = captionZhH + captionZhGap + captionEnH + captionEnGap + pathRowH + pathRowGap;
-  // 高度跟着内容走。方框和路径行收紧时窗口变矮，日志高度保持不变。
-  // Height follows the sections. Tighter boxes and path rows shorten the window; the log stays the same height.
+  // 高度跟着内容走。路径行、说明区和分段空隙收紧后，窗口变矮，不再留一块空的中部。
+  // Height follows the sections. Tighter path rows, explanation, and section gaps shorten the window so the middle is not an empty band.
   var aboveLog = topInset
     + headerH + headerGap
     + introH + introGap
@@ -1410,7 +1492,7 @@ function buildInterface(app) {
   var content = objc(mainWindow.contentView);
 
   var headerY = row(headerH, headerGap);
-  var releasesW = 304;
+  var releasesW = 248;
   var releasesH = 28;
   var titleW = inner - releasesW - 16;
   content.addSubview(makeLabel(
@@ -1418,7 +1500,7 @@ function buildInterface(app) {
     margin, headerY + 3, titleW, 26, 18, true
   ));
   releasesButton = makeButton(
-    '打开 Releases 页面 / Open Releases',
+    OPEN_GITHUB_TITLE,
     margin + inner - releasesW,
     headerY + Math.round((headerH - releasesH) / 2),
     releasesW,
@@ -1487,15 +1569,23 @@ function buildInterface(app) {
   }
   var modsLabelTop = modsTitleChrome + modsAfterTitle;
   var modsLabelY = yInBox(modsLabelTop, modsLabelH);
-  var modsRowY = yInBox(modsLabelTop + modsLabelH + modsGap1, modsRowH);
-  var downloadY = yInBox(modsLabelTop + modsLabelH + modsGap1 + modsRowH + modsGap2, downloadH);
+  var modsEnY = yInBox(modsLabelTop + modsLabelH + modsLabelGap, modsEnH);
+  var modsHelpY = yInBox(modsLabelTop + modsLabelH + modsLabelGap + modsEnH + modsEnGap, modsHelpH);
+  var modsRowY = yInBox(modsLabelTop + modsLabelH + modsLabelGap + modsEnH + modsEnGap + modsHelpH + modsHelpGap, modsRowH);
+  var downloadY = yInBox(modsLabelTop + modsLabelH + modsLabelGap + modsEnH + modsEnGap + modsHelpH + modsHelpGap + modsRowH + modsGap2, downloadH);
   var boxPadX = 16;
   var boxInnerLeft = margin + boxPadX;
   var boxInnerW = inner - boxPadX * 2;
   content.addSubview(makeLabel(
-    'Mods 文件夹（可选）/ Mods folder (optional)',
-    boxInnerLeft, modsLabelY, boxInnerW, modsLabelH, 13, false
+    MODS_FIELD_LABEL,
+    boxInnerLeft, modsLabelY, boxInnerW, modsLabelH, 13, true
   ));
+  var modsEnglish = makeLabel(MODS_FIELD_ENGLISH, boxInnerLeft, modsEnY, boxInnerW, modsEnH, 12, false);
+  try { modsEnglish.setTextColor(secondaryTextColor()); } catch (eModsEn) {}
+  content.addSubview(modsEnglish);
+  var modsHelp = makeWrappingLabel(MODS_FIELD_HELP, boxInnerLeft, modsHelpY, boxInnerW, modsHelpH, 11);
+  try { modsHelp.setTextColor(secondaryTextColor()); } catch (eModsHelp) {}
+  content.addSubview(modsHelp);
   var modsOpenW = 100;
   var modsChooseW = 148;
   var modsClearW = 108;
@@ -1509,7 +1599,7 @@ function buildInterface(app) {
   chooseModsButton = makeButton('选择… / Choose…', boxInnerLeft + modsFieldW + modsGap + modsOpenW + modsGap, modsRowY, modsChooseW, 30, 'chooseMods:');
   clearModsButton = makeButton('清除 / Clear', boxInnerLeft + modsFieldW + modsGap + modsOpenW + modsGap + modsChooseW + modsGap, modsRowY, modsClearW, 30, 'clearMods:');
   downloadButton = makeButton(
-    '下载最新测试 Mod / Download latest test mod',
+    DOWNLOAD_MOD_TITLE,
     boxInnerLeft, downloadY, boxInnerW, downloadH, 'downloadMod:'
   );
   content.addSubview(modsField);
@@ -1546,12 +1636,12 @@ function buildInterface(app) {
     configLeft + configBtnW + configBtnGap, openConfigY, configBtnW, configBtnH, 'openCoopConfig:', 12
   );
   syncToCoopButton = makeButton(
-    '原版配置 → 联机副本 / Sync original → co-op',
-    configLeft, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 12
+    SYNC_TO_COOP_TITLE,
+    configLeft, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 11
   );
   syncToOriginalButton = makeButton(
-    '联机副本 → 原版配置 / Sync co-op → original',
-    configLeft + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 12
+    SYNC_TO_ORIGINAL_TITLE,
+    configLeft + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 11
   );
   content.addSubview(openOriginalConfigButton);
   content.addSubview(openCoopConfigButton);

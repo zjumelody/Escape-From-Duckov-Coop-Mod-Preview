@@ -24,28 +24,30 @@ In the window:
 1. Confirm the original app. The default is `/Applications/Duckov.app`. Pick the installed Duckov.app; Steam can show the install path. If the game is somewhere else, click Choose.
 2. Confirm where the co-op copy is saved (launch this copy for co-op). The default is `Applications/Duckov-COOP.app` inside your home folder (`~/Applications/Duckov-COOP.app`).
 3. To include the co-op mod, do one of these:
-   - Click **Download latest test mod** and wait until the Mods path fills in; or
-   - Click Choose next to Mods and select an unzipped Mods folder.
+   - Click **Download latest test Mac co-op mod** and wait until the Mods path fills in; or
+   - Click Choose next to Mods and select an unzipped Mods folder. Prepare installs only the outermost folders that contain a `.dll`.
    - Leave Mods empty if you only want the copy prepared and will add Mods later.
 4. Click **Prepare co-op copy** at the bottom of the window. If the copy already exists, the helper asks before replacing it. Mods already inside the copy are kept. Copying the whole game can take several minutes; leave the window open.
-5. When you see **Done**, **launch only** `Duckov-COOP.app` for co-op.
+5. When you see **Done**, you can click **Sync now** to mirror the original config folder onto the co-op config folder, or click **Don't sync** or **OK** to skip that. Then **launch only** `Duckov-COOP.app` for co-op.
 
 What the buttons do:
 
-- **Prepare co-op copy**: copies the original app, turns off App Sandbox, adds `network.client` and `network.server`, and re-signs the copy with the local `codesign` identity `-`. If the Mods field has a path, those files are installed into the copy's `Contents/Mods/` before signing.
-- **Download latest test mod**: downloads the newest `EscapeFromDuckovCoopMod*.zip` from this fork's Releases (including pre-releases), unzips it next to the helper (or into Downloads if that folder is not writable), and fills in the Mods path. The download does not change the game. Click Prepare co-op copy after it finishes.
-- **Open Releases**: opens this fork's Releases page in the browser.
+- **Prepare co-op copy**: copies the original app, turns off App Sandbox, adds `network.client` and `network.server`, and re-signs the copy with the local `codesign` identity `-`. If the Mods field has a path, outermost folders that contain a `.dll` are installed into the copy's `Contents/Mods/` before signing.
+- **Extra Mods folder to add (optional)**: on Prepare, the helper scans this folder. A mod package is an outermost directory that contains at least one `.dll`. Each package is copied whole into the copy's `Contents/Mods/<package-name>/` (`Contents/Mods` is created if needed). Folders with no `.dll` anywhere under them are skipped, and loose files sitting only at the folder root are not copied by themselves. Files that travel with a package are copied with it. An empty field skips installing new mods; Mods already in the copy are still restored when the copy is refreshed.
+- **Download latest test Mac co-op mod**: downloads the newest `EscapeFromDuckovCoopMod*.zip` from this fork's Releases (including pre-releases), unzips it next to the helper (or into Downloads if that folder is not writable), and fills in the Mods path. The download does not change the game. Click Prepare co-op copy after it finishes.
+- **Open GitHub**: opens this fork's Releases page in the browser.
 - **Choose**: pick the original app, the place to save the copy, or an unzipped Mods folder.
 - **Clear**: clears the Mods path so this run does not install new mods.
 - **Open**: shows that row's path in Finder. An empty Mods field shows an alert. A `.app` is revealed in Finder and is not launched.
-- **Open original config folder**: opens Location 1 (original sandbox config). If the folder is missing, the helper explains why and does not create it.
-- **Open co-op config folder**: opens Location 2 (co-op config). The helper creates that folder when it is missing.
-- **Sync original → co-op**: mirrors Location 1 onto Location 2.
-- **Sync co-op → original**: mirrors Location 2 onto Location 1.
+- **Open original config folder**: opens the original config folder (the sandboxed original). If the folder is missing, the helper explains why and does not create it.
+- **Open co-op config folder**: opens the co-op config folder. The helper creates that folder when it is missing.
+- **(sync files) original → co-op**: mirrors the original config folder onto the co-op config folder.
+- **(sync files) co-op → original**: mirrors the co-op config folder onto the original config folder.
+- **Done dialog**: after a successful prepare, the helper asks whether to run that original → co-op sync now. **Sync now** starts it. **Don't sync** and **OK** dismiss the dialog without syncing.
 
-The original app keeps App Sandbox, so its config is `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov` (Location 1, original sandbox config). The co-op copy has App Sandbox off, so its config is `~/Library/Application Support/com.bilibili.duckov` (Location 2, co-op config). The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. Files that exist only in the destination are deleted. If reading Location 1 prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access, then try again.
+The original app keeps App Sandbox, so its config is `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov` (original config folder). The co-op copy has App Sandbox off, so its config is `~/Library/Application Support/com.bilibili.duckov` (co-op config folder). The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. Files that exist only in the destination are deleted. If reading the original config folder prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access, then try again.
 
-Progress scrolls in the text area in the lower part of the window. Mods, and config and saves, each sit in a section marked optional. Prepare co-op copy is a centered blue button at the bottom. Open Releases is a gray button at the top-right of the window. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
+Progress scrolls in the text area in the lower part of the window. Mods, and config and saves, each sit in a section marked optional. Prepare co-op copy is a centered blue button at the bottom. Open GitHub is a gray button at the top-right of the window. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
 
 ### Advanced: Terminal script
 

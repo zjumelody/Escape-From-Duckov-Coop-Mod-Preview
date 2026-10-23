@@ -20,22 +20,27 @@ If macOS says the developer cannot be verified, Control-click the app and choose
 
 | 按钮 / Button | 作用 / What it does |
 | --- | --- |
-| 准备联机副本 / Prepare co-op copy | 复制、改副本权限、本机签名，并在有 Mods 路径时装入副本 |
-| 下载最新测试 Mod / Download latest test mod | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布），解压后填入 Mods 路径 |
-| 打开 Releases 页面 / Open Releases | 在浏览器打开 Releases |
+| 准备联机副本 / Prepare co-op copy | 复制、改副本权限、本机签名，并在有 Mods 路径时装入含 `.dll` 的最外层文件夹 |
+| 下载最新测试 Mac 联机 Mod / Download latest test Mac co-op mod | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布），解压后填入 Mods 路径 |
+| 打开 GitHub 页面 / Open GitHub | 在浏览器打开本 Fork 的 Releases |
+| 要新增加的 Mods 文件夹（可选）/ Extra Mods folder to add (optional) | 只装入含 `.dll` 的最外层文件夹（整包复制到副本 `Contents/Mods/包名/`）。没有 `.dll` 的文件夹跳过。留空则不装新 Mod，已有 Mods 仍会放回 |
 | 打开 / Open | 在访达中显示原版 App、副本或 Mods 路径。`.app` 只显示，不启动 |
-| 打开原版配置位置 / Open original config folder | 打开位置1（原版沙盒配置）。不存在时提示，不创建 |
-| 打开联机副本配置位置 / Open co-op config folder | 打开位置2（联机副本配置）。必要时创建该文件夹 |
-| 原版配置 → 联机副本 / Sync original → co-op | 把位置1的内容镜像到位置2（`rsync -a --delete`） |
-| 联机副本 → 原版配置 / Sync co-op → original | 把位置2的内容镜像到位置1 |
+| 打开原版配置位置 / Open original config folder | 打开原版配置位置（原版沙盒配置）。不存在时提示，不创建 |
+| 打开联机副本配置位置 / Open co-op config folder | 打开联机副本配置位置。必要时创建该文件夹 |
+| （同步文件）原版配置 → 联机副本 / (sync files) original → co-op | 把原版配置位置的内容镜像到联机副本配置位置（`rsync -a --delete`） |
+| （同步文件）联机副本 → 原版配置 / (sync files) co-op → original | 把联机副本配置位置的内容镜像到原版配置位置 |
 
-原版开着 App Sandbox，配置在位置1：`~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`（原版沙盒配置）。联机副本关掉沙盒，配置在位置2：`~/Library/Application Support/com.bilibili.duckov`（联机副本配置）。Bundle ID 相同，差别是沙盒开或关，不是 `.app` 放在哪。同步前请退出两边的游戏。若读取位置1出现 Operation not permitted，请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中加入 `DuckovCoopPrepare.app`。
+准备成功的对话框可以立刻做「原版配置 → 联机副本」，或点「不同步 / Don't sync」或「好 / OK」跳过。
 
-The original app keeps App Sandbox, so config is Location 1: `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`. The co-op copy has App Sandbox off, so config is Location 2: `~/Library/Application Support/com.bilibili.duckov`. The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. If reading Location 1 prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access.
+After a successful prepare, the done dialog can run original → co-op sync immediately, or skip it with Don't sync or OK.
 
-窗口里：原版和副本路径在上方；Mods 与配置/存档是两个可选方框，中间留白较紧；「打开 Releases 页面」在右上角，是一颗灰色按钮；「准备联机副本」是最下方居中的蓝色按钮。
+原版开着 App Sandbox，配置在原版配置位置：`~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`。联机副本关掉沙盒，配置在联机副本配置位置：`~/Library/Application Support/com.bilibili.duckov`。Bundle ID 相同，差别是沙盒开或关，不是 `.app` 放在哪。同步前请退出两边的游戏。若读取原版配置位置出现 Operation not permitted，请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中加入 `DuckovCoopPrepare.app`。
 
-In the window: the original app and the copy path are at the top; Mods and config/saves are two optional boxes with a tight gap; Open Releases is a gray button at the top-right; Prepare co-op copy is a centered blue button at the bottom.
+The original app keeps App Sandbox, so config is the original config folder: `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`. The co-op copy has App Sandbox off, so config is the co-op config folder: `~/Library/Application Support/com.bilibili.duckov`. The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. If reading the original config folder prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access.
+
+窗口里：原版和副本路径在上方，紧接着 Mods 方框；配置方框下面就是状态和日志。「打开 GitHub 页面」在右上角，是一颗灰色按钮；「准备联机副本」是最下方居中的蓝色按钮。
+
+In the window: the original app and the copy path are at the top, then the Mods box; status and the log sit just under the config box. Open GitHub is a gray button at the top-right; Prepare co-op copy is a centered blue button at the bottom.
 
 ## 文件 / Files
 
@@ -44,7 +49,7 @@ In the window: the original app and the copy path are at the top; Mods and confi
 - [`gui/fetch-mod-zip.sh`](gui/fetch-mod-zip.sh) — 下载并解压 Release zip / download and unzip a Release zip
 - [`gui/release-match.js`](gui/release-match.js) — 挑选 `EscapeFromDuckovCoopMod*.zip` / pick that asset
 - [`prepare-duckov-coop-app.sh`](prepare-duckov-coop-app.sh) — 高级备用脚本 / advanced fallback script
-- [`sync-duckov-config.sh`](sync-duckov-config.sh) — 在位置1和位置2之间镜像配置 / mirror config between Location 1 and Location 2
+- [`sync-duckov-config.sh`](sync-duckov-config.sh) — 在原版配置位置和联机副本配置位置之间镜像配置 / mirror config between the original config folder and the co-op config folder
 - [`duckov-coop.entitlements`](duckov-coop.entitlements) — 签名用的 entitlements / entitlements passed to `codesign`
 - [`build-gui-app.sh`](build-gui-app.sh) — 打包 `.app` 和 zip / pack the `.app` and zip
 - [`dist/DuckovCoopPrepare.app`](dist/DuckovCoopPrepare.app) — 打包结果 / packed helper
@@ -59,9 +64,9 @@ chmod +x prepare-duckov-coop-app.sh sync-duckov-config.sh
 ./sync-duckov-config.sh --direction coop-to-original
 ```
 
-参数 / Flags: `--source`, `--dest`, `--mods-dir`, `--force`. 同目录若有 `EscapeFromDuckovCoopMod*.zip`，会在签名前装入副本的 `Contents/Mods/`。`sync-duckov-config.sh` 只用 `--direction original-to-coop`（位置1→位置2）或 `coop-to-original`（位置2→位置1）。
+参数 / Flags: `--source`, `--dest`, `--mods-dir`, `--force`. 同目录若有 `EscapeFromDuckovCoopMod*.zip`，会在签名前装入副本的 `Contents/Mods/`。`sync-duckov-config.sh` 只用 `--direction original-to-coop`（原版配置位置 → 联机副本配置位置）或 `coop-to-original`（联机副本配置位置 → 原版配置位置）。
 
-`sync-duckov-config.sh` accepts `--direction original-to-coop` (Location 1 → 2) or `coop-to-original` (Location 2 → 1).
+`sync-duckov-config.sh` accepts `--direction original-to-coop` (original config folder → co-op config folder) or `coop-to-original` (co-op config folder → original config folder).
 
 A sibling `EscapeFromDuckovCoopMod*.zip` is installed into the copy's `Contents/Mods/` before signing.
 
