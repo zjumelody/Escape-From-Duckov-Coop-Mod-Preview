@@ -4,9 +4,9 @@
 # Mirror the contents of one Duckov config root onto the other
 # (Saves/, Mods configs, and the rest of that folder).
 #
-# 位置1 / Location 1 — 原版沙盒配置（App Sandbox 开着）:
+# 原版配置位置 / original config folder — 原版沙盒配置（App Sandbox 开着）:
 #   ~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov
-# 位置2 / Location 2 — 联机副本配置（App Sandbox 关掉）:
+# 联机副本配置位置 / co-op config folder — 联机副本配置（App Sandbox 关掉）:
 #   ~/Library/Application Support/com.bilibili.duckov
 #
 # 两边 Bundle ID 相同。分成两个文件夹是因为沙盒开或关，不是因为 .app 放在哪。
@@ -43,25 +43,25 @@ usage() {
 Mirror one config root's contents onto the other (rsync -a --delete).
 
 方向 / Directions:
-  original-to-coop, 1to2     位置1 → 位置2 / Location 1 → Location 2
-  coop-to-original, 2to1     位置2 → 位置1 / Location 2 → Location 1
+  original-to-coop, 1to2     原版配置位置 → 联机副本配置位置 / original config folder → co-op config folder
+  coop-to-original, 2to1     联机副本配置位置 → 原版配置位置 / co-op config folder → original config folder
 
 --from 和 --to 只能是下面这两个文件夹（可带 ~ 或末尾斜杠）。
 --from and --to must be these two folders (~ and a trailing slash are fine).
 
-  位置1 / Location 1 — 原版沙盒配置
+  原版配置位置 / original config folder — 原版沙盒配置
   ~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov
 
-  位置2 / Location 2 — 联机副本配置
+  联机副本配置位置 / co-op config folder — 联机副本配置
   ~/Library/Application Support/com.bilibili.duckov
 
 同步前请完全退出原版和联机副本。目标里多出来的文件会被删除。
 Quit the original game and the co-op copy first. Files that exist only in the
 destination are deleted.
 
-若读取位置1时出现 Operation not permitted，请在
+若读取原版配置位置时出现 Operation not permitted，请在
 「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中加入 DuckovCoopPrepare.app 后重试。
-If reading Location 1 prints Operation not permitted, add DuckovCoopPrepare.app
+If reading the original config folder prints Operation not permitted, add DuckovCoopPrepare.app
 under System Settings → Privacy & Security → Full Disk Access, then try again.
 
 环境变量 / Environment:
@@ -149,8 +149,8 @@ assert_allowed_config_path() {
   if [[ "$path" != "$loc1" && "$path" != "$loc2" ]]; then
     die \
       "只允许同步这两个配置文件夹。 / Only these two config folders can be synced." \
-      "位置1 / Location 1: $loc1" \
-      "位置2 / Location 2: $loc2" \
+      "原版配置位置 / original config folder: $loc1" \
+      "联机副本配置位置 / co-op config folder: $loc2" \
       "收到 / Received: $path"
   fi
 }
@@ -181,8 +181,8 @@ looks_like_tcc() {
 permission_denied() {
   note "需要完全磁盘访问权限。请打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」，加入 DuckovCoopPrepare.app，然后重试。"
   note "Full Disk Access is required. Open System Settings → Privacy & Security → Full Disk Access, add DuckovCoopPrepare.app, then try again."
-  note "读取原版沙盒容器（位置1，~/Library/Containers）时，系统经常会拒绝未授权的应用。"
-  note "macOS often blocks unapproved apps from reading the original sandbox container (Location 1, ~/Library/Containers)."
+  note "读取原版配置位置（~/Library/Containers 里的沙盒容器）时，系统经常会拒绝未授权的应用。"
+  note "macOS often blocks unapproved apps from reading the original config folder (the sandbox container under ~/Library/Containers)."
   note "NEED_FULL_DISK_ACCESS"
   exit 77
 }
@@ -278,8 +278,8 @@ perform_sync() {
     die \
       "找不到来源文件夹。 / Source folder was not found." \
       "$src" \
-      "若这是位置1（原版沙盒配置），请先启动一次原版 Duckov.app，让系统生成沙盒容器。" \
-      "If this is Location 1 (original sandbox config), launch the original Duckov.app once so macOS can create the container."
+      "若这是原版配置位置，请先启动一次原版 Duckov.app，让系统生成沙盒容器。" \
+      "If this is the original config folder, launch the original Duckov.app once so macOS can create the container."
   fi
 
   prepare_work_files
@@ -412,8 +412,8 @@ run_self_test() {
   printf '%s\n' 'keep' >"$sibling"
 
   "$BASH" "$0" --direction original-to-coop
-  [[ "$(cat "$loc2/Saves/slot.txt")" == "original-save" ]] || die "self-test: slot was not copied to Location 2"
-  [[ "$(cat "$loc2/Mods/config.cfg")" == "original-mod" ]] || die "self-test: mod config was not copied to Location 2"
+  [[ "$(cat "$loc2/Saves/slot.txt")" == "original-save" ]] || die "self-test: slot was not copied to the co-op config folder"
+  [[ "$(cat "$loc2/Mods/config.cfg")" == "original-mod" ]] || die "self-test: mod config was not copied to the co-op config folder"
   [[ ! -e "$loc2/Extra/old.txt" ]] || die "self-test: extra destination file was not deleted"
   [[ "$(cat "$sibling")" == "keep" ]] || die "self-test: a file outside the config root was modified"
 
@@ -422,8 +422,8 @@ run_self_test() {
   mkdir -p "$loc1/OnlyOnOriginal"
   printf '%s\n' 'extra' >"$loc1/OnlyOnOriginal/extra.txt"
   "$BASH" "$0" --direction coop-to-original
-  [[ "$(cat "$loc1/Saves/slot.txt")" == "coop-save" ]] || die "self-test: slot was not copied back to Location 1"
-  [[ ! -e "$loc1/Mods" ]] || die "self-test: Mods was not removed from Location 1"
+  [[ "$(cat "$loc1/Saves/slot.txt")" == "coop-save" ]] || die "self-test: slot was not copied back to the original config folder"
+  [[ ! -e "$loc1/Mods" ]] || die "self-test: Mods was not removed from the original config folder"
   [[ ! -e "$loc1/OnlyOnOriginal" ]] || die "self-test: extra destination directory was not deleted"
 
   mkdir -p "$loc2/Saves"
@@ -444,7 +444,7 @@ run_self_test() {
   fi
   # 来源缺失时不应把空镜像写进目标。目标里原有文件应还在。
   # A missing source must not wipe the destination.
-  [[ "$(cat "$loc2/Saves/slot.txt")" == "via-from" ]] || die "self-test: missing source changed Location 2"
+  [[ "$(cat "$loc2/Saves/slot.txt")" == "via-from" ]] || die "self-test: missing source changed the co-op config folder"
   if "$BASH" "$0" --from "$loc2/../${BUNDLE_ID}" --to "$loc1"; then
     die "self-test: dotdot path was accepted"
   fi
