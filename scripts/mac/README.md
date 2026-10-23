@@ -24,7 +24,7 @@ If macOS says the developer cannot be verified, Control-click the app and choose
 
 **当前状态： / Current status:** — 窗口最上方、第一步之前，蓝色标题，自己的边框。正文会告诉你下一步该做什么，并在某一步成功后更新。打开时如果副本、配置或联机 Mod 已经就绪，会直接标出来。
 
-1. **第一步：准备联机副本 / Step 1: Prepare co-op copy** — 原版路径、副本路径（默认 `~/Applications/Duckov-COOP.app`），以及这一步里的蓝色「准备联机副本」。
+1. **第一步：准备联机副本 / Step 1: Prepare co-op copy** — 原版路径、副本路径（默认 `~/Applications/Duckov-COOP.app`），以及这一步里的「准备联机副本」。副本还不在时按钮是蓝色；打开时该位置已经有副本则是黄色，点它仍会重新生成；这一次准备成功后变成绿色。
 2. **第二步：配置文件同步 / Step 2: Sync config files** — 打开两边的配置文件夹，或用带「（同步文件）」的按钮互相镜像。
 3. **第三步：配置（支持Mac的）联机 Mod / Step 3: Configure (Mac-compatible) co-op Mod** — 选择已经下载的 Mac 联机 Mod，或点下载按钮。副本已存在时会装进 `Contents/Mods/` 并重新签名；还不存在时记下路径，等第一步准备时装入。
 
@@ -36,7 +36,7 @@ A finished step's title turns green and gains a ✅. That stays until the window
 
 | 按钮 / Button | 作用 / What it does |
 | --- | --- |
-| 准备联机副本 / Prepare co-op copy | 在第一步里：复制、改副本权限、本机签名。第三步有路径时，装入含 `.dll` 的最外层文件夹 |
+| 准备联机副本 / Prepare co-op copy | 在第一步里：复制、改副本权限、本机签名。第三步有路径时，装入含 `.dll` 的最外层文件夹。蓝色是还没有副本；黄色标题是「检测到联机副本App已经存在，可以下一步或者点此按钮重新生成」；这一次准备成功后变绿，标题是「已经准备好联机副本，可以开始用副本App游戏了」。换一个还不存在的副本路径会回到蓝色 |
 | 自动下载并更新最新支持 Mac 的联机 Mod 到副本 Mods 位置 / Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布）并解压。按钮大约是原来的 1.5 倍高，两行标题可以读清。副本里如果已经是同一个 Release 版本，就跳过重复下载并说明原因。否则装入 `Contents/Mods/` 并重新签名；副本还不存在时记下路径 |
 | 打开 GitHub 页面 / Open GitHub | 右上角浅绿色按钮，在浏览器打开本 Fork 的 Releases。不是一个步骤 |
 | 打开 / Open | 在访达中显示原版 App、副本或 Mod 路径。`.app` 只显示，不启动 |
@@ -53,9 +53,9 @@ After a successful prepare, the dialog title asks whether to continue with Step 
 
 The original app keeps App Sandbox, so config is the original config folder: `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`. The co-op copy has App Sandbox off, so config is the co-op config folder: `~/Library/Application Support/com.bilibili.duckov`. The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. If reading the original config folder prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access.
 
-窗口里：右上角是浅绿色的「打开 GitHub 页面」。它下面是带边框的「当前状态」，然后第一步、第二步、第三步各在一个带边框的方框里。说明文字按内容换行。蓝色「准备联机副本」在第一步里居中。第三步的下载按钮更高，方便读两行标题。底部进度文字区域是浅色底。
+窗口里：右上角是浅绿色的「打开 GitHub 页面」。它下面是带边框的「当前状态」，然后第一步、第二步、第三步各在一个带边框的方框里。说明文字按内容换行。第一步的准备按钮横跨这一步的内容宽度，标题画在居中的图片上。「准备联机副本」在副本还不存在时是蓝色；打开时已经有副本则是黄色，点它会重新生成；这一次准备成功后变成绿色，并换成两行「可以开始用副本 App 游戏了」的标题。改成一个还不存在的路径会回到蓝色。第一步标题在副本已存在或准备成功时仍是绿色加 ✅。第三步的下载按钮更高，方便读两行标题。底部进度文字区域是浅色底。
 
-In the window: Open GitHub is a light-green button at the top-right. Below it is a bordered Current status panel, then Step 1, Step 2, and Step 3, each in its own bordered box. Help text is sized to its wrapped height. The blue Prepare co-op copy button is centered in Step 1. The Step 3 download button is taller so its two-line title stays readable. The progress text area at the bottom has a light background.
+In the window: Open GitHub is a light-green button at the top-right. Below it is a bordered Current status panel, then Step 1, Step 2, and Step 3, each in its own bordered box. Help text is sized to its wrapped height. The Prepare button spans the step and draws its title in a centered image. It is blue when the copy is not there yet, yellow when a copy is already on disk (clicking still regenerates it), and green after a successful prepare in this session, with a two-line "you can play with the copy App now" title. Pointing the destination at a path that does not exist returns it to blue. The Step 1 heading stays green with ✅ when the copy exists or prepare succeeded. The Step 3 download button is taller so its two-line title stays readable. The progress text area at the bottom has a light background.
 
 ## 文件 / Files
 

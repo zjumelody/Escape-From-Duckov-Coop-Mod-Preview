@@ -26,6 +26,11 @@ var step1TitleLabel = null;
 var step2TitleLabel = null;
 var step3TitleLabel = null;
 var stepDone = [false, false, false, false];
+// Lowercased dest path prepared successfully in this session. Empty until then.
+// Green overrides the yellow "already on disk" state only for this path.
+var prepareReadyPath = '';
+// Last dest path whose Mods folder was scanned, so typing does not rescan.
+var lastModScanDest = '';
 var prepareButton = null;
 var prepareFill = null;
 var downloadButton = null;
@@ -416,8 +421,8 @@ function introText() {
     '',
     '窗口最上方的「当前状态」会告诉你下一步该做什么。做完的步骤标题会变成绿色，并加上 ✅。',
     'Current status at the top of the window says what to do next. A finished step\'s title turns green and gains a ✅.',
-    '第一步：准备联机副本。确认原版 Duckov.app 和副本位置（默认 ~/Applications/Duckov-COOP.app），再点这一步里的蓝色「准备联机副本」。原版不会被修改。',
-    'Step 1: Prepare the co-op copy. Confirm the original Duckov.app and the copy (default ~/Applications/Duckov-COOP.app), then click the blue Prepare co-op copy button in that step. The original app is not modified.',
+    '第一步：准备联机副本。确认原版 Duckov.app 和副本位置（默认 ~/Applications/Duckov-COOP.app），再点这一步里的「准备联机副本」。副本还不存在时按钮是蓝色；打开时已经有副本则是黄色，点它会重新生成；这一次准备成功后变成绿色。原版不会被修改。',
+    'Step 1: Prepare the co-op copy. Confirm the original Duckov.app and the copy (default ~/Applications/Duckov-COOP.app), then click Prepare co-op copy in that step. The button is blue when the copy is not there yet, yellow when a copy is already on disk (clicking regenerates it), and green after a successful prepare in this session. The original app is not modified.',
     '第二步：配置文件同步。原版配置和联机副本配置可以互相镜像。同步前请退出两边的游戏。',
     'Step 2: Sync config files. The original config folder and the co-op config folder can be mirrored either way. Quit both games before syncing.',
     '第三步：配置（支持 Mac 的）联机 Mod。已经下载的话选择位置，会更新到副本；没有的话点下载按钮，自动下载并拷贝到副本的 Mods。',
@@ -622,6 +627,8 @@ function finishTask() {
   if (code === 0) {
     appendLogFile('\n退出码 / Exit code: 0\n完成 / Done\n');
     stepDone[1] = true;
+    try { prepareReadyPath = normalize(fieldText(destField)).toLowerCase(); } catch (eReady) { prepareReadyPath = ''; }
+    lastModScanDest = prepareReadyPath;
     try {
       var preparedMods = listCoopMods('dest', normalize(fieldText(destField)));
       if (preparedMods.length > 0) stepDone[3] = true;
@@ -633,7 +640,12 @@ function finishTask() {
   }
   appendLogFile('\n退出码 / Exit code: ' + code + '\n未完成 / Did not finish\n原版 App 没有被修改。 / The original app was not modified.\n');
   setStatus('未完成。请查看日志。原版未被修改。 / Did not finish. Read the log. The original app was not modified.', false);
+  try {
+    stepDone[1] = !!copyLooksPrepared();
+    if (!stepDone[1]) stepDone[3] = false;
+  } catch (eFailStep) {}
   setBusy(false);
+  paintStepHeaders();
   showAlert(
     '未完成 / Did not finish',
     '准备副本时出错。请查看窗口里的日志。原版 App 没有被修改。\n\nPreparing the copy failed. Read the log in the window. The original app was not modified.'
@@ -1084,13 +1096,19 @@ function onChooseSource() {
   var start = '/Applications';
   if (current && fileExists(current)) start = current;
   var picked = chooseApp('选择原版 Duckov.app。\nChoose the original Duckov.app.', start);
-  if (picked) setField(sourceField, picked);
+  if (picked) {
+    setField(sourceField, picked);
+    syncStepsToDest();
+  }
 }
 
 function onChooseDest() {
   if (busy) return;
   var picked = chooseDestPath();
-  if (picked) setField(destField, picked);
+  if (picked) {
+    setField(destField, picked);
+    syncStepsToDest();
+  }
 }
 
 function copyIsReady() {
@@ -1326,6 +1344,10 @@ function paintLayer(view, r, g, b, radius) {
 var WINDOW_TITLE = '《逃离鸭科夫》Mac 联机 Mod 支持工具';
 // English equivalent: Escape from Duckov — Mac co-op Mod support tool.
 var PREPARE_BUTTON_TITLE = '准备联机副本 / Prepare co-op copy';
+var PREPARE_READY_TITLE_ZH = '已经准备好联机副本，可以开始用副本App游戏了';
+var PREPARE_READY_TITLE_EN = 'Co-op copy is ready — you can play with the copy App now';
+var PREPARE_EXISTS_TITLE_ZH = '检测到联机副本App已经存在，可以下一步或者点此按钮重新生成';
+var PREPARE_EXISTS_TITLE_EN = 'Co-op copy App already found — continue to next steps, or click to regenerate';
 var PREPARE_TITLE_SIZE = 14;
 var SYNC_TO_COOP_TITLE = '（同步文件）原版配置 → 联机副本 / (sync files) original → co-op';
 var SYNC_TO_ORIGINAL_TITLE = '（同步文件）联机副本 → 原版配置 / (sync files) co-op → original';
@@ -1383,25 +1405,75 @@ function makeCenteredTitleImage(title, font, color, width, height) {
   return image;
 }
 
-function stylePrimaryTitle(button) {
+// idle: the dest .app is not on disk (blue). exists: it is already there (yellow).
+// ready: this session prepared that same path (green). Green overrides yellow.
+function prepareVisualState() {
+  var dest = '';
+  try { dest = normalize(fieldText(destField)); } catch (e) { dest = ''; }
+  var key = dest ? dest.toLowerCase() : '';
+  if (prepareReadyPath && key === prepareReadyPath && copyLooksPrepared()) return 'ready';
+  if (copyLooksPrepared()) return 'exists';
+  return 'idle';
+}
+
+function preparePalette(state, enabled) {
+  if (state === 'ready') {
+    if (enabled) return { r: 0.15, g: 0.58, b: 0.30, text: $.NSColor.whiteColor };
+    return { r: 0.42, g: 0.56, b: 0.46, text: $.NSColor.whiteColor };
+  }
+  if (state === 'exists') {
+    var ink = rgb(0.12, 0.10, 0.02);
+    if (enabled) return { r: 0.98, g: 0.80, b: 0.18, text: ink };
+    return { r: 0.72, g: 0.66, b: 0.40, text: ink };
+  }
+  if (enabled) return { r: 0.10, g: 0.38, b: 0.78, text: $.NSColor.whiteColor };
+  return { r: 0.45, g: 0.49, b: 0.54, text: $.NSColor.whiteColor };
+}
+
+function prepareTitleLines(state) {
+  if (state === 'ready') return [PREPARE_READY_TITLE_ZH, PREPARE_READY_TITLE_EN];
+  if (state === 'exists') return [PREPARE_EXISTS_TITLE_ZH, PREPARE_EXISTS_TITLE_EN];
+  return null;
+}
+
+function prepareTitleLabel(state) {
+  var lines = prepareTitleLines(state);
+  if (!lines) return PREPARE_BUTTON_TITLE;
+  return lines[0] + ' / ' + lines[1];
+}
+
+function stylePrimaryTitle(button, enabled) {
   if (!button) return;
-  var font = $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE);
-  var bounds = viewSize(button, 460, 34);
+  var state = prepareVisualState();
+  if (enabled === undefined) enabled = true;
+  var palette = preparePalette(state, !!enabled);
+  var fontSize = PREPARE_TITLE_SIZE;
+  var font = $.NSFont.boldSystemFontOfSize(fontSize);
+  var bounds = viewSize(button, 900, 62);
+  var lines = prepareTitleLines(state);
+  var label = prepareTitleLabel(state);
+  if (lines) {
+    var maxW = bounds.width > 40 ? bounds.width - 24 : 800;
+    var zhW = measureText(lines[0], font).width;
+    var enW = measureText(lines[1], font).width;
+    if (zhW > maxW || enW > maxW) {
+      fontSize = 13;
+      font = $.NSFont.boldSystemFontOfSize(fontSize);
+    }
+  }
   var image = null;
   try {
-    image = makeCenteredTitleImage(
-      PREPARE_BUTTON_TITLE,
-      font,
-      $.NSColor.whiteColor,
-      bounds.width,
-      bounds.height
-    );
+    if (lines) {
+      image = makeStackedTitleImage(lines, font, palette.text, bounds.width, bounds.height);
+    } else {
+      image = makeCenteredTitleImage(label, font, palette.text, bounds.width, bounds.height);
+    }
   } catch (e0) {
     image = null;
   }
   try { button.setAttributedTitle(objc($.NSAttributedString.alloc).initWithString($(''))); } catch (e1) {}
   if (!image) {
-    try { button.setTitle($(PREPARE_BUTTON_TITLE)); } catch (e2) {}
+    try { button.setTitle($(label)); } catch (e2) {}
     return;
   }
   try { button.setTitle($('')); } catch (e3) {}
@@ -1417,19 +1489,19 @@ function stylePrimaryTitle(button) {
     cell.setImageScaling(fit);
     cell.setBordered(false);
   } catch (e8) {}
-  try { button.setAccessibilityLabel($(PREPARE_BUTTON_TITLE)); } catch (e9) {}
+  try { button.setAccessibilityLabel($(label)); } catch (e9) {}
+  try { button.setToolTip($(label)); } catch (e10) {}
 }
 
 function paintPrepareButton(enabled) {
-  var r = enabled ? 0.10 : 0.45;
-  var g = enabled ? 0.38 : 0.49;
-  var b = enabled ? 0.78 : 0.54;
+  var palette = preparePalette(prepareVisualState(), !!enabled);
   if (prepareFill) {
-    try { prepareFill.setFillColor(rgb(r, g, b)); } catch (e) {}
+    try { prepareFill.setFillColor(rgb(palette.r, palette.g, palette.b)); } catch (e) {}
   }
   if (!prepareButton) return;
-  paintLayer(prepareButton, r, g, b, 6);
-  stylePrimaryTitle(prepareButton);
+  paintLayer(prepareButton, palette.r, palette.g, palette.b, 6);
+  stylePrimaryTitle(prepareButton, !!enabled);
+  try { prepareButton.setBezelColor(rgb(palette.r, palette.g, palette.b)); } catch (e2) {}
 }
 
 function makeStackedTitleImage(lines, font, color, width, height) {
@@ -1653,6 +1725,10 @@ function registerController() {
       'chooseDest:': {
         types: ['void', ['id']],
         implementation: function () { guard(onChooseDest); }
+      },
+      'controlTextDidChange:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(onPathsEdited); }
       },
       'chooseMods:': {
         types: ['void', ['id']],
@@ -1930,8 +2006,40 @@ function detectExistingProgress() {
     if (stepDone[1]) {
       var found = listCoopMods('dest', normalize(fieldText(destField)));
       if (found.length > 0) stepDone[3] = true;
+      lastModScanDest = normalize(fieldText(destField)).toLowerCase();
     }
   } catch (e) {}
+}
+
+// Dest or source text changed. Step 1 follows whether that copy exists.
+// A path prepared earlier this session stays green only while it still matches.
+function syncStepsToDest() {
+  var prepared = false;
+  var destKey = '';
+  try {
+    prepared = copyLooksPrepared();
+    destKey = normalize(fieldText(destField)).toLowerCase();
+  } catch (e) {
+    prepared = false;
+  }
+  stepDone[1] = !!prepared;
+  if (!prepared) {
+    stepDone[3] = false;
+    lastModScanDest = destKey;
+  } else if (destKey !== lastModScanDest) {
+    lastModScanDest = destKey;
+    try {
+      var found = listCoopMods('dest', normalize(fieldText(destField)));
+      stepDone[3] = found.length > 0;
+    } catch (e2) {}
+  }
+  refreshGuide();
+  paintPrepareButton(!busy);
+}
+
+function onPathsEdited() {
+  if (busy) return;
+  syncStepsToDest();
 }
 
 function buildInterface(app) {
@@ -1958,8 +2066,12 @@ function buildInterface(app) {
   var captionEnGap = 2;
   var pathRowH = 30;
   var pathRowGap = 4;
-  var prepareH = 34;
-  var prepareW = 460;
+  var prepareFont = $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE);
+  var prepareLine = measureText(PREPARE_EXISTS_TITLE_ZH, prepareFont).height;
+  if (!(prepareLine > 0)) prepareLine = 18;
+  var prepareH = Math.ceil(prepareLine * 2 + 20);
+  if (prepareH < 62) prepareH = 62;
+  var prepareW = contentW;
   var prepareTopGap = 6;
   var explainGap = 6;
   var configBtnH = 30;
@@ -2141,6 +2253,8 @@ function buildInterface(app) {
   destField = destRow.field;
   openDestButton = destRow.openButton;
   chooseDestButton = destRow.chooseButton;
+  try { sourceField.setDelegate(controller); } catch (eSourceDelegate) {}
+  try { destField.setDelegate(controller); } catch (eDestDelegate) {}
 
   var prepareX = contentX + Math.round((contentW - prepareW) / 2);
   var prepareY = row(prepareH, 0);

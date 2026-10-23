@@ -25,7 +25,7 @@
 
 1. 确认「指定原版游戏 App 的位置（现有已经安装的游戏位置可在 steam 里查看）」。默认是 `/Applications/Duckov.app`。已安装的位置可以在 Steam 里查看。若不在默认位置，点「选择… / Choose…」。
 2. 确认「指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）」。默认是你的用户文件夹里的 `Applications/Duckov-COOP.app`（也就是 `~/Applications/Duckov-COOP.app`）。今后要联机，打开的是这个副本。
-3. 点这一步里的蓝色 **「准备联机副本 / Prepare co-op copy」**。副本已经存在时，会先问你要不要替换；已经装在副本里的 Mods 会保留。若第三步已经填了 Mod 路径，准备时会一并装进副本。复制整份游戏可能要几分钟，这段时间不要关窗口。
+3. 点这一步里的 **「准备联机副本 / Prepare co-op copy」**。副本还不存在时按钮是蓝色。如果打开工具时这个位置已经有副本，按钮是黄色，写着可以下一步，或点此重新生成；点下去仍会先问要不要替换。这一次准备成功后按钮变成绿色，表示可以用副本 App 开始游戏。已经装在副本里的 Mods 会保留。若第三步已经填了 Mod 路径，准备时会一并装进副本。复制整份游戏可能要几分钟，这段时间不要关窗口。把副本路径改成一个还不存在的位置，按钮会回到蓝色。
 4. 准备成功后，对话框标题会问要不要做第二步：把原版配置（包括存档）同步到副本。可以点「立即同步 / Sync now」，或点「不同步 / Don't sync」。然后**只启动** `Duckov-COOP.app` 进行联机。
 
 **第二步：配置文件同步 / Step 2: Sync config files**
@@ -40,7 +40,7 @@
 
 按钮含义：
 
-- **准备联机副本 / Prepare co-op copy**：把原版复制成副本，关闭 App Sandbox，加入 `network.client` 和 `network.server`，再用本机 `codesign` 身份 `-` 重新签名。第三步填了路径时，会在签名前把含 `.dll` 的最外层文件夹装进副本的 `Contents/Mods/`。
+- **准备联机副本 / Prepare co-op copy**：把原版复制成副本，关闭 App Sandbox，加入 `network.client` 和 `network.server`，再用本机 `codesign` 身份 `-` 重新签名。第三步填了路径时，会在签名前把含 `.dll` 的最外层文件夹装进副本的 `Contents/Mods/`。按钮三种颜色：蓝色是还没有副本（标题「准备联机副本 / Prepare co-op copy」）；黄色是打开时副本已经在（标题「检测到联机副本App已经存在，可以下一步或者点此按钮重新生成 / Co-op copy App already found — continue to next steps, or click to regenerate」）；绿色是这一次准备成功（标题「已经准备好联机副本，可以开始用副本App游戏了 / Co-op copy is ready — you can play with the copy App now」）。绿色只覆盖刚才准备成功的那个路径。换一个还不存在的路径会回到蓝色。第一步标题在副本已存在时仍是绿色加 ✅。
 - **自动下载并更新最新支持 Mac 的联机 Mod 到副本 Mods 位置 / Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder**：从本 Fork 的 Releases（包含预发布）下载最新的 `EscapeFromDuckovCoopMod*.zip` 并解压。按钮大约是原来的 1.5 倍高。若副本或已选文件夹里已经是同一个 Release 版本，会跳过重复下载并说明原因。需要安装时，会先去掉副本里同属这一联机 Mod 的旧目录，只留一份，再重新签名。副本还不存在时只记下路径，等第一步准备时装入。其他 Mod 不会被删除。
 - **打开 GitHub 页面 / Open GitHub**：用浏览器打开本 Fork 的 Releases，方便自己下载。按钮是浅绿色。
 - **选择… / Choose…**：挑选原版 App、副本保存位置，或已经下载的 Mac 联机 Mod 文件夹。选中 Mod 文件夹且副本已存在时，会更新进副本。
@@ -54,7 +54,7 @@
 
 原版开着 App Sandbox，配置在 `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`（原版配置位置）。联机副本关掉沙盒，配置在 `~/Library/Application Support/com.bilibili.duckov`（联机副本配置位置）。Bundle ID 相同，差别来自沙盒开关，不是 `.app` 放在哪。同步前请退出两边的游戏；目标里多出来的文件会被删掉。若读取原版配置位置时出现 Operation not permitted，请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里加入 `DuckovCoopPrepare.app` 后再试。
 
-进度在窗口底部的浅色文字区域里滚动显示。「准备联机副本」是第一步里居中的蓝色按钮。成功和失败都有中文和英文说明。准备副本不会修改原版 `Duckov.app`。窗口最上方的「当前状态」会跟着已完成的步骤更新。
+进度在窗口底部的浅色文字区域里滚动显示。第一步里的准备按钮横跨这一步，标题画在居中图片上：还没有副本时是蓝色，打开时已经有副本是黄色，这一次准备成功后是绿色。成功和失败都有中文和英文说明。准备副本不会修改原版 `Duckov.app`。窗口最上方的「当前状态」会跟着已完成的步骤更新。
 
 ### 高级：终端脚本
 
