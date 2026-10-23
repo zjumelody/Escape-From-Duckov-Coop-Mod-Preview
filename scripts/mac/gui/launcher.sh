@@ -26,7 +26,7 @@ export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_CTYPE="${LC_CTYPE:-UTF-8}"
 
-chmod +x "$RESOURCES/prepare-duckov-coop-app.sh" "$RESOURCES/fetch-mod-zip.sh" 2>/dev/null || true
+chmod +x "$RESOURCES/prepare-duckov-coop-app.sh" "$RESOURCES/fetch-mod-zip.sh" "$RESOURCES/sync-duckov-config.sh" 2>/dev/null || true
 if command -v xattr >/dev/null 2>&1; then
   xattr -dr com.apple.quarantine "$APP_BUNDLE" 2>/dev/null || true
 fi

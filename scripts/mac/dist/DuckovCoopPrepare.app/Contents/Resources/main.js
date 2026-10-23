@@ -30,6 +30,14 @@ var chooseSourceButton = null;
 var chooseDestButton = null;
 var chooseModsButton = null;
 var clearModsButton = null;
+var openSourceButton = null;
+var openDestButton = null;
+var openModsButton = null;
+var openOriginalConfigButton = null;
+var openCoopConfigButton = null;
+var syncToCoopButton = null;
+var syncToOriginalButton = null;
+var DUCKOV_BUNDLE_ID = 'com.bilibili.duckov';
 var runningTask = null;
 var pollTimer = null;
 var busy = false;
@@ -120,6 +128,40 @@ function joinPath(dir, name) {
 function endsWithApp(path) {
   var lower = String(path || '').toLowerCase();
   return lower.length >= 4 && lower.substring(lower.length - 4) === '.app';
+}
+
+function originalConfigDir() {
+  return joinPath(
+    homeDir(),
+    'Library/Containers/' + DUCKOV_BUNDLE_ID + '/Data/Library/Application Support/' + DUCKOV_BUNDLE_ID
+  );
+}
+
+function coopConfigDir() {
+  return joinPath(homeDir(), 'Library/Application Support/' + DUCKOV_BUNDLE_ID);
+}
+
+function parentDir(path) {
+  var text = String(path || '');
+  var slash = text.lastIndexOf('/');
+  if (slash <= 0) return '';
+  return text.substring(0, slash);
+}
+
+function configExplanation() {
+  var loc1 = '~/Library/Containers/' + DUCKOV_BUNDLE_ID + '/Data/Library/Application Support/' + DUCKOV_BUNDLE_ID;
+  var loc2 = '~/Library/Application Support/' + DUCKOV_BUNDLE_ID;
+  return [
+    '同一 Bundle ID（' + DUCKOV_BUNDLE_ID + '）。原版开启 App Sandbox，配置在位置1；联机副本关闭沙盒，配置在位置2。由沙盒开关决定，与 .app 放在哪个文件夹无关。文件夹里通常有 Saves/、Mods 配置等。同步前请先退出两边的游戏。',
+    'Same bundle id (' + DUCKOV_BUNDLE_ID + '). Location 1 is the sandboxed original. Location 2 is the co-op copy with App Sandbox off. The split is sandbox on versus off, not where the .app file lives. Folders usually hold Saves/ and Mods configs. Quit both games before syncing.',
+    '位置1 / Location 1 — 原版沙盒配置：' + loc1,
+    '位置2 / Location 2 — 联机副本配置：' + loc2
+  ].join('\n');
+}
+
+function fullDiskAccessText() {
+  return '请打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」，加入 DuckovCoopPrepare.app，然后重试。读取原版沙盒容器（位置1）时，系统经常会拒绝未授权的应用。\n'
+    + 'Open System Settings → Privacy & Security → Full Disk Access, add DuckovCoopPrepare.app, then try again. macOS often blocks unapproved apps from reading the original sandbox container (Location 1).';
 }
 
 function runtimeEnv() {
@@ -234,7 +276,11 @@ function setField(field, text) {
 function setBusy(flag) {
   busy = !!flag;
   var enabled = !busy;
-  var buttons = [prepareButton, downloadButton, chooseSourceButton, chooseDestButton, chooseModsButton, clearModsButton];
+  var buttons = [
+    prepareButton, downloadButton, chooseSourceButton, chooseDestButton, chooseModsButton, clearModsButton,
+    openSourceButton, openDestButton, openModsButton,
+    openOriginalConfigButton, openCoopConfigButton, syncToCoopButton, syncToOriginalButton
+  ];
   var i;
   for (i = 0; i < buttons.length; i++) {
     if (buttons[i]) buttons[i].setEnabled(enabled);
@@ -343,6 +389,8 @@ function introText() {
     '   Optional: in the Mods section, choose an unzipped Mods folder, or download the latest test mod. Empty is fine.',
     '4. 点击窗口最下方的「准备联机副本 / Prepare co-op copy」。复制游戏时可能需要几分钟。',
     '   Click Prepare co-op copy at the bottom of the window. Copying the game can take several minutes.',
+    '5. 原版和联机副本的存档不在同一个文件夹。见窗口里的「配置与存档」。同步前请退出两边的游戏。',
+    '   The original app and the co-op copy keep saves in different folders. See Config and saves in the window. Quit both games before syncing.',
     '',
     '若系统提示无法验证开发者：按住 Control 点按本应用，选择「打开」。只需一次。',
     '若菜单里没有「打开」，到「系统设置 → 隐私与安全性」里点「仍要打开」。',
@@ -461,6 +509,37 @@ function finishTask() {
     );
     return;
   }
+  if (kind === 'sync') {
+    var needAccess = code === 77;
+    try {
+      var syncLog = readTextFile(logPath);
+      if (syncLog.indexOf('NEED_FULL_DISK_ACCESS') !== -1) needAccess = true;
+      if (syncLog.indexOf('Operation not permitted') !== -1) needAccess = true;
+      if (syncLog.indexOf('Operation not allowed') !== -1) needAccess = true;
+    } catch (eSync) {}
+    if (code === 0) {
+      appendLogFile('\n退出码 / Exit code: 0\n同步完成 / Sync finished\n');
+      setStatus('同步完成。 / Sync finished.', true);
+      setBusy(false);
+      showAlert(
+        '同步完成 / Sync finished',
+        '配置文件夹里的内容已按来源镜像到目标。这不会修改 .app 本身。\nThe config folder contents were mirrored onto the destination. The .app bundles themselves are not modified.'
+      );
+      return;
+    }
+    appendLogFile('\n退出码 / Exit code: ' + code + '\n同步未完成 / Sync did not finish\n');
+    setStatus('同步未完成。请查看日志。 / Sync did not finish. Read the log.', false);
+    setBusy(false);
+    if (needAccess) {
+      showAlert('需要完全磁盘访问权限 / Full Disk Access is required', fullDiskAccessText());
+    } else {
+      showAlert(
+        '同步未完成 / Sync did not finish',
+        '请查看窗口里的日志。\nRead the log in the window.\n\n若日志里出现 Operation not permitted，请授予 DuckovCoopPrepare.app 完全磁盘访问权限后再试。\nIf the log says Operation not permitted, grant DuckovCoopPrepare.app Full Disk Access, then try again.'
+      );
+    }
+    return;
+  }
   if (code === 0) {
     appendLogFile('\n退出码 / Exit code: 0\n完成 / Done\n');
     setStatus('完成。副本已准备好。 / Done. The co-op copy is ready.', true);
@@ -540,6 +619,166 @@ function startTask(argv, kind, header, resetLog) {
     null,
     true
   );
+}
+
+function workspaceShared() {
+  return objc($.NSWorkspace.sharedWorkspace);
+}
+
+function openWithWorkspace(path) {
+  var ws = workspaceShared();
+  try {
+    if (asBool(ws.openFile($(String(path))))) return true;
+  } catch (e1) {}
+  try {
+    var url = $.NSURL.fileURLWithPath($(String(path)));
+    if (asBool(ws.openURL(url))) return true;
+  } catch (e2) {}
+  return false;
+}
+
+function revealInFinder(path) {
+  var ws = workspaceShared();
+  try {
+    if (asBool(ws.selectFileInFileViewerRootedAtPath($(String(path)), null))) return true;
+  } catch (e1) {}
+  try {
+    var url = $.NSURL.fileURLWithPath($(String(path)));
+    var urls = objc(objc($.NSMutableArray.alloc).init);
+    urls.addObject(url);
+    ws.activateFileViewerSelectingURLs(urls);
+    return true;
+  } catch (e2) {}
+  // openFile on a .app would launch the game. Leave the bundle unopened.
+  if (endsWithApp(path)) return false;
+  return openWithWorkspace(path);
+}
+
+function onRevealField(field, emptyKind) {
+  if (busy || quitting) return;
+  var path = normalize(fieldText(field));
+  if (!path) {
+    if (emptyKind === 'mods') {
+      showAlert(
+        'Mods 路径是空的 / Mods path is empty',
+        '还没有填写 Mods 文件夹。可以点「选择… / Choose…」，或保持留空，这次准备就不装入新的 Mod。\nNo Mods folder is filled in. Click Choose, or leave it empty so this run does not install new mods.'
+      );
+    } else {
+      showAlert('路径是空的 / Path is empty', '请先填写路径。\nEnter a path first.');
+    }
+    return;
+  }
+  if (fileExists(path)) {
+    if (!revealInFinder(path)) showAlert('无法在访达中显示 / Could not show it in Finder', path);
+    return;
+  }
+  var parent = parentDir(path);
+  if (parent && fileExists(parent)) {
+    if (!revealInFinder(parent)) {
+      showAlert('无法在访达中显示 / Could not show it in Finder', parent);
+      return;
+    }
+    setStatus('该路径还不存在，已在访达中显示上一级。 / That path does not exist yet. Showed its parent in Finder.', null);
+    return;
+  }
+  showAlert('找不到这个位置 / That location was not found', path);
+}
+
+function onOpenOriginalConfig() {
+  if (busy || quitting) return;
+  var path = originalConfigDir();
+  if (!fileExists(path)) {
+    showAlert(
+      '找不到原版配置位置 / Original config folder was not found',
+      '位置1 / Location 1 — 原版沙盒配置还不存在。请先至少启动一次原版 Duckov.app，让系统生成沙盒容器后再试。不会自动创建这个文件夹。\n'
+      + 'Location 1 does not exist yet. Launch the original Duckov.app once so macOS can create the sandbox container, then try again. This folder is not created automatically.\n\n'
+      + path
+    );
+    return;
+  }
+  if (!openWithWorkspace(path)) {
+    showAlert('无法打开 / Could not open', path);
+    return;
+  }
+  setStatus('已打开位置1 / 原版沙盒配置。 / Opened Location 1 (original sandbox config).', true);
+}
+
+function onOpenCoopConfig() {
+  if (busy || quitting) return;
+  var path = coopConfigDir();
+  if (!fileExists(path)) ensureDir(path);
+  if (!fileExists(path)) {
+    showAlert(
+      '无法创建联机副本配置位置 / Could not create the co-op config folder',
+      path + '\n\n' + fullDiskAccessText()
+    );
+    return;
+  }
+  if (!openWithWorkspace(path)) {
+    showAlert('无法打开 / Could not open', path);
+    return;
+  }
+  setStatus('已打开位置2 / 联机副本配置。 / Opened Location 2 (co-op config).', true);
+}
+
+function onSync(direction) {
+  if (busy || quitting) return;
+  var toCoop = direction === '1to2';
+  var src = toCoop ? originalConfigDir() : coopConfigDir();
+  var dest = toCoop ? coopConfigDir() : originalConfigDir();
+  var title = toCoop
+    ? '原版配置 → 联机副本 / Sync original → co-op'
+    : '联机副本 → 原版配置 / Sync co-op → original';
+  var flag = toCoop ? 'original-to-coop' : 'coop-to-original';
+  if (!fileExists(src)) {
+    var missing = '找不到来源文件夹。 / Source folder was not found.\n\n' + src + '\n\n';
+    if (toCoop) {
+      missing += '位置1（原版沙盒配置）还不存在。请先至少启动一次原版 Duckov.app。\nLocation 1 (original sandbox config) does not exist yet. Launch the original Duckov.app at least once.';
+    } else {
+      missing += '位置2（联机副本配置）还不存在。可以先点「打开联机副本配置位置」创建空文件夹，或先启动一次联机副本。\nLocation 2 (co-op config) does not exist yet. Click Open co-op config folder to create it, or launch the co-op copy once.';
+    }
+    showAlert('找不到来源文件夹 / Source folder was not found', missing);
+    return;
+  }
+  var script = joinPath(resources, 'sync-duckov-config.sh');
+  if (!fileExists(script)) {
+    showAlert(
+      '找不到同步脚本 / Sync script is missing',
+      '请重新下载 DuckovCoopPrepare-mac.zip。\nDownload DuckovCoopPrepare-mac.zip again.\n\n' + script
+    );
+    return;
+  }
+  var info = '请先完全退出原版 Duckov 和联机副本。两边都不要开着。\n'
+    + 'Quit the original Duckov app and the co-op copy completely. Leave both closed.\n\n'
+    + '这会用来源的内容镜像覆盖目标，并删除目标里多出来的文件（包括 Saves/、Mods 配置等）。\n'
+    + 'This mirrors the source onto the destination and deletes files that exist only in the destination (including Saves/ and Mods configs).\n\n';
+  if (toCoop) {
+    info += '目标是位置2（联机副本配置）。副本的存档会被换成原版里的内容。\n'
+      + 'The destination is Location 2 (co-op config). Saves in the co-op copy will be replaced by the original game.\n\n';
+  } else {
+    info += '目标是位置1（原版沙盒配置）。原版游戏的存档会被换成副本里的内容。\n'
+      + 'The destination is Location 1 (original sandbox config). Saves in the original game will be replaced by the co-op copy.\n\n';
+  }
+  info += '从 / From:\n' + src + '\n\n到 / To:\n' + dest;
+  if (!showConfirm(title, info, '开始同步 / Start sync', '取消 / Cancel')) {
+    setStatus('已取消。 / Cancelled.', null);
+    return;
+  }
+  setBusy(true);
+  setStatus('正在同步配置… 请保持两边游戏都已退出。 / Syncing config… Keep both games quit.', null);
+  var argv = ['/bin/bash', script, '--direction', flag];
+  var header = [
+    '',
+    '正在同步配置… / Syncing config…',
+    '从 / From: ' + src,
+    '到 / To: ' + dest,
+    '命令 / Command: ' + previewArgs(argv),
+    '',
+    '请保持窗口打开。两边的游戏都应已退出。',
+    'Leave this window open. Both games should already be quit.',
+    ''
+  ].join('\n');
+  startTask(argv, 'sync', header, false);
 }
 
 function onPrepare() {
@@ -757,8 +996,8 @@ function onWindowShouldClose() {
   if (closing || quitting) return true;
   if (!busy) return true;
   var ok = showConfirm(
-    '正在准备 / Still working',
-    '关闭窗口会中断这次准备。\nClosing the window stops this run.',
+    '正在进行 / Still working',
+    '关闭窗口会中断当前操作。\nClosing the window stops the current operation.',
     '仍然关闭 / Close anyway',
     '继续等待 / Keep waiting'
   );
@@ -877,13 +1116,14 @@ function makeField(value, x, y, w, h) {
   return field;
 }
 
-function makeButton(title, x, y, w, h, action) {
+function makeButton(title, x, y, w, h, action, fontSize) {
   var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
   button.setTitle($(title));
   button.setBezelStyle(1);
-  button.setFont($.NSFont.systemFontOfSize(13));
+  button.setFont($.NSFont.systemFontOfSize(fontSize || 13));
   button.setTarget(controller);
   button.setAction(action);
+  try { button.setToolTip($(title)); } catch (eTip) {}
   return button;
 }
 
@@ -1001,6 +1241,34 @@ function registerController() {
         types: ['void', ['id']],
         implementation: function () { guard(onClearMods); }
       },
+      'openSource:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(function () { onRevealField(sourceField, 'source'); }); }
+      },
+      'openDest:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(function () { onRevealField(destField, 'dest'); }); }
+      },
+      'openMods:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(function () { onRevealField(modsField, 'mods'); }); }
+      },
+      'openOriginalConfig:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(onOpenOriginalConfig); }
+      },
+      'openCoopConfig:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(onOpenCoopConfig); }
+      },
+      'syncOriginalToCoop:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(function () { onSync('1to2'); }); }
+      },
+      'syncCoopToOriginal:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(function () { onSync('2to1'); }); }
+      },
       'poll:': {
         types: ['void', ['id']],
         implementation: function (timer) { onPoll(timer); }
@@ -1023,7 +1291,17 @@ function registerController() {
 
 function buildInterface(app) {
   var windowWidth = 780;
-  var windowHeight = 768;
+  var configExplainH = 158;
+  var configBtnH = 30;
+  var configTitleChrome = 26;
+  var configAfterTitle = 8;
+  var configGapA = 8;
+  var configGapB = 8;
+  var configPadBottom = 12;
+  var configBoxH = configTitleChrome + configAfterTitle + configExplainH + configGapA + configBtnH + configGapB + configBtnH + configPadBottom;
+  var configSectionGap = 8;
+  // The config section is inserted into the existing flow. Grow by that height so the log and the Prepare button stay put.
+  var windowHeight = 768 + configBoxH + configSectionGap;
   var margin = 20;
   var inner = windowWidth - margin * 2;
   var cursor = 12;
@@ -1050,12 +1328,26 @@ function buildInterface(app) {
     margin, row(50, 8), inner, 50, 12
   ));
 
+  var pathOpenW = 108;
+  var pathChooseW = 148;
+  var pathGap = 8;
+  function placePathRow(fieldValue, y, openAction, chooseAction) {
+    var fieldW = inner - pathOpenW - pathChooseW - pathGap * 2;
+    var field = makeField(fieldValue, margin, y + 2, fieldW, 26);
+    var openButton = makeButton('打开 / Open', margin + fieldW + pathGap, y, pathOpenW, 30, openAction);
+    var chooseButton = makeButton('选择… / Choose…', margin + fieldW + pathGap + pathOpenW + pathGap, y, pathChooseW, 30, chooseAction);
+    content.addSubview(field);
+    content.addSubview(openButton);
+    content.addSubview(chooseButton);
+    return { field: field, openButton: openButton, chooseButton: chooseButton };
+  }
+
   content.addSubview(makeLabel('原版 App / Original app', margin, row(18, 4), inner, 18, 13, false));
   var sourceY = row(30, 10);
-  sourceField = makeField('/Applications/Duckov.app', margin, sourceY + 2, inner - 168, 26);
-  chooseSourceButton = makeButton('选择… / Choose…', margin + inner - 156, sourceY, 156, 30, 'chooseSource:');
-  content.addSubview(sourceField);
-  content.addSubview(chooseSourceButton);
+  var sourceRow = placePathRow('/Applications/Duckov.app', sourceY, 'openSource:', 'chooseSource:');
+  sourceField = sourceRow.field;
+  openSourceButton = sourceRow.openButton;
+  chooseSourceButton = sourceRow.chooseButton;
 
   content.addSubview(makeLabel(
     '指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）',
@@ -1068,10 +1360,10 @@ function buildInterface(app) {
   try { destEnglish.setTextColor(secondaryTextColor()); } catch (e) {}
   content.addSubview(destEnglish);
   var destY = row(30, 10);
-  destField = makeField(joinPath(homeDir(), 'Applications/Duckov-COOP.app'), margin, destY + 2, inner - 168, 26);
-  chooseDestButton = makeButton('选择… / Choose…', margin + inner - 156, destY, 156, 30, 'chooseDest:');
-  content.addSubview(destField);
-  content.addSubview(chooseDestButton);
+  var destRow = placePathRow(joinPath(homeDir(), 'Applications/Duckov-COOP.app'), destY, 'openDest:', 'chooseDest:');
+  destField = destRow.field;
+  openDestButton = destRow.openButton;
+  chooseDestButton = destRow.chooseButton;
 
   var titleChrome = 26;
   var afterTitle = 8;
@@ -1099,24 +1391,68 @@ function buildInterface(app) {
     'Mods 文件夹（可选）/ Mods folder (optional)',
     boxInnerLeft, modsLabelY, boxInnerW, modsLabelH, 13, false
   ));
-  var chooseW = 148;
-  var clearW = 120;
-  var modsFieldW = boxInnerW - chooseW - clearW - 16;
+  var modsOpenW = 100;
+  var modsChooseW = 148;
+  var modsClearW = 108;
+  var modsGap = 8;
+  var modsFieldW = boxInnerW - modsOpenW - modsChooseW - modsClearW - modsGap * 3;
   modsField = makeField('', boxInnerLeft, modsRowY + 2, modsFieldW, 26);
   try {
     modsField.setPlaceholderString($('留空则不装入新的 Mod / Leave empty to skip new mods'));
   } catch (eMods) {}
-  chooseModsButton = makeButton('选择… / Choose…', boxInnerLeft + modsFieldW + 8, modsRowY, chooseW, 30, 'chooseMods:');
-  clearModsButton = makeButton('清除 / Clear', boxInnerLeft + modsFieldW + 8 + chooseW + 8, modsRowY, clearW, 30, 'clearMods:');
+  openModsButton = makeButton('打开 / Open', boxInnerLeft + modsFieldW + modsGap, modsRowY, modsOpenW, 30, 'openMods:');
+  chooseModsButton = makeButton('选择… / Choose…', boxInnerLeft + modsFieldW + modsGap + modsOpenW + modsGap, modsRowY, modsChooseW, 30, 'chooseMods:');
+  clearModsButton = makeButton('清除 / Clear', boxInnerLeft + modsFieldW + modsGap + modsOpenW + modsGap + modsChooseW + modsGap, modsRowY, modsClearW, 30, 'clearMods:');
   downloadButton = makeButton(
     '下载最新测试 Mod / Download latest test mod',
     boxInnerLeft, downloadY, boxInnerW, downloadH, 'downloadMod:'
   );
   content.addSubview(modsField);
+  content.addSubview(openModsButton);
   content.addSubview(chooseModsButton);
   content.addSubview(clearModsButton);
   content.addSubview(downloadButton);
   cursor += boxH + 4;
+
+  var configBoxY = windowHeight - cursor - configBoxH;
+  var configBox = makeSectionBox('可选：配置与存档 / Optional: config and saves', margin, configBoxY, inner, configBoxH);
+  content.addSubview(configBox);
+  function yInConfig(topOffset, h) {
+    return configBoxY + configBoxH - topOffset - h;
+  }
+  var explainTop = configTitleChrome + configAfterTitle;
+  var explainY = yInConfig(explainTop, configExplainH);
+  var openConfigY = yInConfig(explainTop + configExplainH + configGapA, configBtnH);
+  var syncConfigY = yInConfig(explainTop + configExplainH + configGapA + configBtnH + configGapB, configBtnH);
+  var configPadX = 16;
+  var configLeft = margin + configPadX;
+  var configInnerW = inner - configPadX * 2;
+  var explain = makeWrappingLabel(configExplanation(), configLeft, explainY, configInnerW, configExplainH, 11);
+  try { explain.setSelectable(true); } catch (eExplain) {}
+  content.addSubview(explain);
+  var configBtnGap = 8;
+  var configBtnW = Math.floor((configInnerW - configBtnGap) / 2);
+  openOriginalConfigButton = makeButton(
+    '打开原版配置位置 / Open original config folder',
+    configLeft, openConfigY, configBtnW, configBtnH, 'openOriginalConfig:', 12
+  );
+  openCoopConfigButton = makeButton(
+    '打开联机副本配置位置 / Open co-op config folder',
+    configLeft + configBtnW + configBtnGap, openConfigY, configBtnW, configBtnH, 'openCoopConfig:', 12
+  );
+  syncToCoopButton = makeButton(
+    '原版配置 → 联机副本 / Sync original → co-op',
+    configLeft, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 12
+  );
+  syncToOriginalButton = makeButton(
+    '联机副本 → 原版配置 / Sync co-op → original',
+    configLeft + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 12
+  );
+  content.addSubview(openOriginalConfigButton);
+  content.addSubview(openCoopConfigButton);
+  content.addSubview(syncToCoopButton);
+  content.addSubview(syncToOriginalButton);
+  cursor += configBoxH + configSectionGap;
 
   var linkW = 340;
   var linkY = row(24, 6);

@@ -1,3 +1,6 @@
+感谢原作者的奉献，世界有他们更精彩，原地址：https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
+请支持他们的劳动成果并遵守相关法规法则！
+
 # 逃离鸭科夫联机模组（Melody Fork · Mac 兼容）
 
 [English](README_EN.md) | **简体中文**
@@ -34,8 +37,15 @@
 - **打开 Releases 页面 / Open Releases**：用浏览器打开本 Fork 的 Releases，方便自己下载。
 - **选择… / Choose…**：挑选原版 App、副本保存位置，或已经解压的 Mods 文件夹。
 - **清除 / Clear**：清空 Mods 路径。这一次准备就不装入新的 Mod。
+- **打开 / Open**：在访达中显示这一行的路径。Mods 为空时会提示。`.app` 会在访达里显示，不会因此启动游戏。
+- **打开原版配置位置 / Open original config folder**：打开位置1（原版沙盒配置）。文件夹不存在时会说明原因，不会自动创建。
+- **打开联机副本配置位置 / Open co-op config folder**：打开位置2（联机副本配置）。必要时会先创建这个文件夹。
+- **原版配置 → 联机副本 / Sync original → co-op**：把位置1里的内容镜像到位置2。
+- **联机副本 → 原版配置 / Sync co-op → original**：把位置2里的内容镜像到位置1。
 
-进度在窗口中下部滚动显示。Mods 在标为可选的区域里，可以先留空。「准备联机副本」是最下方的大按钮。「打开 Releases 页面」是旁边的小链接。成功和失败都有中文和英文说明。原版 `Duckov.app` 不会被修改。
+原版开着 App Sandbox，配置在 `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`（位置1 / 原版沙盒配置）。联机副本关掉沙盒，配置在 `~/Library/Application Support/com.bilibili.duckov`（位置2 / 联机副本配置）。Bundle ID 相同，差别来自沙盒开关，不是 `.app` 放在哪。同步前请退出两边的游戏；目标里多出来的文件会被删掉。若读取位置1时出现 Operation not permitted，请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里加入 `DuckovCoopPrepare.app` 后再试。
+
+进度在窗口中下部滚动显示。Mods、配置与存档各在一个标为可选的区域里。「准备联机副本」仍是最下方的大按钮。「打开 Releases 页面」是旁边的小链接。成功和失败都有中文和英文说明。准备副本不会修改原版 `Duckov.app`。
 
 ### 高级：终端脚本
 
@@ -87,6 +97,3 @@ chmod +x prepare-duckov-coop-app.sh
 - 若之后又手动放入 Mods，请再运行一次准备工具或脚本，以便重新签名。
 
 许可证：[LICENSE.txt](LICENSE.txt)
-
-感谢原作者的奉献，世界有他们更精彩，原地址：https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview  
-请支持他们的劳动成果并遵守相关法规法则！
