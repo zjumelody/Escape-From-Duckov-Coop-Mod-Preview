@@ -3,11 +3,14 @@
 # 为 Mac 联机准备一份可写的《逃离鸭科夫》副本：复制 App、关闭 App Sandbox、
 # 加入 network.client / network.server，并用本机 codesign 身份 "-" 重新签名。
 # 不修改原版 App。Mods 只进入副本。
+# 安装联机 Mod 时，副本里同一联机 Mod 的旧目录会被换成一份新的，其他 Mod 保留。
 #
 # Prepare a writable macOS copy of Duckov for co-op: copy the app, turn off
 # App Sandbox, add network.client / network.server, and re-sign the copy with
 # the local codesign identity "-". The original app is not modified. Mods go
 # into the copy only.
+# Installing the co-op Mod replaces older folders of that same mod in the copy.
+# Other mods stay.
 #
 # 推荐路径是图形工具 DuckovCoopPrepare.app。本脚本是高级备用。
 # The recommended path is the graphical helper DuckovCoopPrepare.app.
@@ -28,6 +31,12 @@ DEST="${DEST:-${DUCKOV_DEST:-${HOME:-}/Applications/Duckov-COOP.app}}"
 MODS_DIR="${MODS_DIR:-${DUCKOV_MODS_DIR:-}}"
 FORCE="${FORCE:-0}"
 UPDATE_MODS="${UPDATE_MODS:-0}"
+LIST_COOP_MODS=0
+DEDUPE_COOP_MODS=0
+KEEP_VERSION=""
+ALLOW_SKIP_SAME=0
+SKIPPED_SAME_VERSION=0
+REMOVED_COOP_COUNT=0
 INSTALLED_COUNT=0
 RESTORED_MODS=0
 USED_MODS_LABEL=""
@@ -61,9 +70,28 @@ and re-sign that copy with the local codesign identity "-".
   --update-mods
              不复制整份 App。把 --mods-dir 里的 Mac 联机 Mod 装进已经存在的副本 Contents/Mods/，
              再用本机 codesign 身份 "-" 重新签名。原版不会被修改。
+             副本里同一联机 Mod 的旧目录会先去掉，只留一份新的。其他 Mod（例如背包扩展）保留。
+             若副本里已经是同一个版本，则跳过覆盖和重新签名。
              Do not copy the whole app. Install the Mac co-op Mod from --mods-dir into an existing
              copy's Contents/Mods/, then re-sign that copy with the local codesign identity "-".
              The original app is not modified.
+             Older folders of this same co-op Mod are removed first so only one new copy remains.
+             Other mods (for example a backpack expansion) stay.
+             If the copy already has that same version, overwrite and re-sign are skipped.
+  --list-coop-mods
+             只列出 --dest 副本 Contents/Mods/ 或 --mods-dir 里的联机 Mod。不修改任何文件。
+             每行：COOP_MOD、版本（没有则是 -）、路径，以制表符分开。
+             Only list co-op Mod folders in the --dest copy's Contents/Mods/ or in --mods-dir.
+             Nothing is modified. Each line is COOP_MOD, a version (or -), and the path, tab-separated.
+  --dedupe-coop-mods
+             不安装新文件。去掉副本里重复的联机 Mod 目录，只留一份（可用 --keep-version 指定版本）。
+             其他 Mod 保留。原版不会被修改。有目录被去掉时才会重新签名。
+             Do not install new files. Remove duplicate co-op Mod folders in the copy so one remains
+             (--keep-version picks which version). Other mods stay. The original app is not modified.
+             The copy is re-signed only when a folder was removed.
+  --keep-version VER
+             配合 --dedupe-coop-mods。保留这个版本，去掉同属联机 Mod 的其他目录。
+             With --dedupe-coop-mods. Keep this version and remove other folders of the same co-op Mod.
   -h, --help 显示本说明 / Show this help
 
 环境变量（命令行优先）/ Environment (flags win):
@@ -232,6 +260,12 @@ copy_tree() {
     rsync -a "$src/" "$dest/"
     return 0
   fi
+  if command -v cp >/dev/null 2>&1; then
+    rm -rf "$dest"
+    mkdir -p "$(dirname "$dest")"
+    cp -a "$src" "$dest"
+    return 0
+  fi
   die \
     "需要 macOS 自带的 ditto（或 rsync）才能复制 App。" \
     "Need ditto (shipped with macOS) or rsync to copy the app."
@@ -302,6 +336,637 @@ select_outer_packages() {
       printf '%s\n' "$pkg" >>"$output"
     fi
   done <"$input"
+}
+
+# 同一联机 Mod 家族：创意工坊目录、本 Fork 的 Mac 包、上游目录名，以及 info.ini / 主 DLL。
+# 背包扩展等其他 Mod 不在此列。只用来识别，不会按这个规则删除原版 App 里的文件。
+# One co-op mod family: the workshop folder, this fork's Mac package, upstream folder
+# names, plus info.ini / the main DLL. Other mods (a backpack expansion, for example)
+# are not included. This only identifies folders. It never deletes files in the original app.
+name_is_coop_family() {
+  local raw="$1"
+  local norm
+  norm="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d ' _.-')"
+  case "$norm" in
+    *3591341282*|*escapefromduckovcoop*|*duckovcoopmod*)
+      return 0
+      ;;
+  esac
+  case "$raw" in
+    *逃离鸭科夫联机*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+normalize_version_label() {
+  local v
+  v="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' \t')"
+  v="${v#v}"
+  case "$v" in
+    ""|"-"|"?"|"unknown")
+      v=""
+      ;;
+  esac
+  printf '%s\n' "$v"
+}
+
+versions_same() {
+  local a b
+  a="$(normalize_version_label "$1")"
+  b="$(normalize_version_label "$2")"
+  [[ -n "$a" && "$a" == "$b" ]]
+}
+
+versions_tie() {
+  local a b
+  a="$(normalize_version_label "$1")"
+  b="$(normalize_version_label "$2")"
+  [[ "$a" == "$b" ]]
+}
+
+version_parts() {
+  local v num rest rest2 major minor patch
+  v="$(normalize_version_label "$1")"
+  num="${v%%[-_+]*}"
+  major="${num%%.*}"
+  if [[ "$num" == *.* ]]; then
+    rest="${num#*.}"
+    minor="${rest%%.*}"
+    if [[ "$rest" == *.* ]]; then
+      rest2="${rest#*.}"
+      patch="${rest2%%.*}"
+    else
+      patch=0
+    fi
+  else
+    minor=0
+    patch=0
+  fi
+  major="${major//[^0-9]/}"
+  minor="${minor//[^0-9]/}"
+  patch="${patch//[^0-9]/}"
+  [[ -n "$major" ]] || major=0
+  [[ -n "$minor" ]] || minor=0
+  [[ -n "$patch" ]] || patch=0
+  printf '%s %s %s\n' "$major" "$minor" "$patch"
+}
+
+version_is_newer() {
+  local a1 b1 c1 a2 b2 c2
+  read -r a1 b1 c1 <<<"$(version_parts "$1")"
+  read -r a2 b2 c2 <<<"$(version_parts "$2")"
+  if (( a1 != a2 )); then
+    if (( a1 > a2 )); then
+      return 0
+    fi
+    return 1
+  fi
+  if (( b1 != b2 )); then
+    if (( b1 > b2 )); then
+      return 0
+    fi
+    return 1
+  fi
+  if (( c1 != c2 )); then
+    if (( c1 > c2 )); then
+      return 0
+    fi
+    return 1
+  fi
+  return 1
+}
+
+ini_marks_coop_family() {
+  local ini="$1"
+  local line key val val_norm
+  [[ -f "$ini" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      \#*|\;*|"")
+        continue
+        ;;
+    esac
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(printf '%s' "$key" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
+    val="$(printf '%s' "$val" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//')"
+    val_norm="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]' | tr -d ' \t')"
+    case "$key" in
+      publishedfileid|workshopid)
+        [[ "$val_norm" == "3591341282" ]] && return 0
+        ;;
+      name|modname|id)
+        [[ "$val_norm" == "escapefromduckovcoopmod" ]] && return 0
+        ;;
+    esac
+  done <"$ini"
+  return 1
+}
+
+ini_version_label() {
+  local ini="$1"
+  local line key val
+  [[ -f "$ini" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(printf '%s' "$key" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
+    val="$(printf '%s' "$val" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//')"
+    if [[ "$key" == "version" ]]; then
+      case "$(normalize_version_label "$val")" in
+        "")
+          return 0
+          ;;
+        *)
+          if [[ "$val" == *[0-9]* && "$val" == *.* ]]; then
+            printf '%s\n' "$val"
+          fi
+          return 0
+          ;;
+      esac
+    fi
+  done <"$ini"
+  return 0
+}
+
+dir_has_coop_dll() {
+  local dir="$1"
+  local file base
+  [[ -d "$dir" ]] || return 1
+  for file in "$dir"/*.dll "$dir"/*.DLL; do
+    [[ -f "$file" ]] || continue
+    base="$(basename "$file")"
+    base="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+    [[ "$base" == "escapefromduckovcoopmod.dll" ]] && return 0
+  done
+  return 1
+}
+
+find_coop_dll() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 0
+  find "$dir" -maxdepth 3 -type f -iname 'EscapeFromDuckovCoopMod.dll' ! -path '*/__MACOSX/*' -print -quit 2>/dev/null || true
+}
+
+# 目录本身是一份联机 Mod，而不是「里面碰巧有一份联机 Mod」的 Mods 总目录。
+# The directory is one co-op Mod package, not a Mods root that merely contains one.
+is_coop_package() {
+  local dir="$1"
+  local base ini
+  [[ -d "$dir" ]] || return 1
+  base="$(basename "$dir")"
+  [[ "$base" == "__MACOSX" ]] && return 1
+  if [[ -f "$dir/info.ini" ]] && ini_marks_coop_family "$dir/info.ini"; then
+    return 0
+  fi
+  if dir_has_coop_dll "$dir"; then
+    return 0
+  fi
+  if name_is_coop_family "$base"; then
+    for ini in "$dir"/*/info.ini; do
+      [[ -f "$ini" ]] || continue
+      if ini_marks_coop_family "$ini"; then
+        return 0
+      fi
+    done
+    if [[ -n "$(find_coop_dll "$dir")" ]]; then
+      return 0
+    fi
+    # 创意工坊编号这类目录名本身就够了，即使 dll 还没放进去。
+    # A workshop-id style folder name is enough even before the dll is present.
+    return 0
+  fi
+  return 1
+}
+
+dll_version_label() {
+  local dll="$1"
+  local bin out
+  [[ -f "$dll" ]] || return 0
+  bin=""
+  if [[ -x /usr/bin/strings ]]; then
+    bin=/usr/bin/strings
+  elif command -v strings >/dev/null 2>&1; then
+    bin="$(command -v strings)"
+  else
+    return 0
+  fi
+  out="$("$bin" -a -n 3 "$dll" 2>/dev/null | awk '
+function is3(s) { return s ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ }
+function is4(s) { return s ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ }
+{
+  n++
+  line[n] = $0
+}
+END {
+  chosen = ""
+  tn = 0
+  for (i = 1; i <= n; i++) {
+    if (is3(line[i])) order[++tn] = line[i]
+    if (is4(line[i])) four[line[i]] = 1
+  }
+  for (i = 1; i <= tn; i++) {
+    if (four[order[i] ".0"]) chosen = order[i]
+  }
+  if (chosen == "" && tn >= 1) chosen = order[tn]
+  if (chosen == "") {
+    for (i = 1; i <= n; i++) {
+      if (is4(line[i]) && line[i] ~ /\.0$/) {
+        chosen = line[i]
+        sub(/\.0$/, "", chosen)
+      }
+    }
+  }
+  if (chosen != "") print chosen
+}
+' || true)"
+  printf '%s\n' "$out"
+}
+
+package_version_label() {
+  local dir="$1"
+  local file base best ini_ver dll
+  best=""
+  [[ -d "$dir" ]] || return 0
+  for file in "$dir"/INSTALL_*.txt "$dir"/*/INSTALL_*.txt "$dir"/*/*/INSTALL_*.txt; do
+    [[ -f "$file" ]] || continue
+    base="$(basename "$file")"
+    base="${base#INSTALL_}"
+    base="${base%.txt}"
+    base="${base%.TXT}"
+    [[ -n "$base" ]] || continue
+    if [[ -z "$best" ]] || version_is_newer "$base" "$best"; then
+      best="$base"
+    fi
+  done
+  if [[ -n "$best" ]]; then
+    printf '%s\n' "$best"
+    return 0
+  fi
+  ini_ver="$(ini_version_label "$dir/info.ini")"
+  if [[ -z "$ini_ver" ]]; then
+    for file in "$dir"/*/info.ini; do
+      [[ -f "$file" ]] || continue
+      ini_ver="$(ini_version_label "$file")"
+      [[ -n "$ini_ver" ]] && break
+    done
+  fi
+  if [[ -n "$ini_ver" ]]; then
+    printf '%s\n' "$ini_ver"
+    return 0
+  fi
+  dll="$(find_coop_dll "$dir")"
+  if [[ -n "$dll" ]]; then
+    dll_version_label "$dll"
+  fi
+  return 0
+}
+
+coop_package_score() {
+  local dir="$1"
+  local ver="$2"
+  local score=0
+  local base norm file
+  base="$(basename "$dir")"
+  norm="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]' | tr -d ' _.-')"
+  case "$norm" in
+    *escapefromduckovcoop*)
+      score=$((score + 50))
+      ;;
+  esac
+  case "$norm" in
+    *3591341282*)
+      score=$((score + 10))
+      ;;
+  esac
+  if [[ -n "$(normalize_version_label "$ver")" ]]; then
+    score=$((score + 20))
+  fi
+  for file in "$dir"/INSTALL_*.txt "$dir"/*/INSTALL_*.txt; do
+    [[ -f "$file" ]] || continue
+    score=$((score + 5))
+    break
+  done
+  printf '%s\n' "$score"
+}
+
+list_contains_coop_package() {
+  local list="$1"
+  local pkg
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    if is_coop_package "$pkg"; then
+      return 0
+    fi
+  done <"$list"
+  return 1
+}
+
+filter_to_one_coop_family() {
+  local input="$1"
+  local output="$2"
+  local families="$TMP_WORK/coop-family-in"
+  local pkg best best_ver best_score ver score
+  : >"$output"
+  : >"$families"
+  best=""
+  best_ver=""
+  best_score=-1
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    if is_coop_package "$pkg"; then
+      printf '%s\n' "$pkg" >>"$families"
+    else
+      printf '%s\n' "$pkg" >>"$output"
+    fi
+  done <"$input"
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    ver="$(package_version_label "$pkg")"
+    score="$(coop_package_score "$pkg" "$ver")"
+    if [[ -z "$best" ]]; then
+      best="$pkg"
+      best_ver="$ver"
+      best_score="$score"
+    elif version_is_newer "$ver" "$best_ver"; then
+      best="$pkg"
+      best_ver="$ver"
+      best_score="$score"
+    elif versions_tie "$ver" "$best_ver" && [[ "$score" -gt "$best_score" ]]; then
+      best="$pkg"
+      best_ver="$ver"
+      best_score="$score"
+    fi
+  done <"$families"
+  if [[ -z "$best" ]]; then
+    return 0
+  fi
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" && "$pkg" != "$best" ]] || continue
+    note \
+      "来源里有多份联机 Mod，只安装较新的一份：$(basename "$best")${best_ver:+（${best_ver}）}。已跳过：$(basename "$pkg")" \
+      "More than one co-op Mod was provided. Only the newer one is installed: $(basename "$best")${best_ver:+ (${best_ver})}. Skipped: $(basename "$pkg")"
+  done <"$families"
+  printf '%s\n' "$best" >>"$output"
+}
+
+incoming_coop_version() {
+  local list="$1"
+  local pkg
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    if is_coop_package "$pkg"; then
+      package_version_label "$pkg"
+      return 0
+    fi
+  done <"$list"
+  return 0
+}
+
+scan_dest_coop_packages() {
+  local child
+  EXISTING_COOP_COUNT=0
+  EXISTING_COOP_VERSION=""
+  [[ -d "$DEST/Contents/Mods" ]] || return 0
+  for child in "$DEST/Contents/Mods"/*; do
+    [[ -d "$child" ]] || continue
+    if is_coop_package "$child"; then
+      EXISTING_COOP_COUNT=$((EXISTING_COOP_COUNT + 1))
+      EXISTING_COOP_VERSION="$(package_version_label "$child")"
+    fi
+  done
+}
+
+remove_tree_in_dest_mods() {
+  local target="$1"
+  local mods_root
+  [[ -n "$target" && "$target" != "/" ]] || die \
+    "拒绝删除意外路径。 / Refusing to delete an unexpected path."
+  mods_root="$DEST/Contents/Mods"
+  case "$target/" in
+    "$mods_root/"*)
+      ;;
+    *)
+      die \
+        "拒绝删除 Mods 以外的路径：${target}" \
+        "Refusing to delete a path outside Mods: ${target}"
+      ;;
+  esac
+  case "$target" in
+    "/"|"/Applications"|"${HOME:-}"|"/System"|"/usr"|"$DEST"|"$mods_root")
+      die \
+        "拒绝删除意外路径：${target}" \
+        "Refusing to delete an unexpected path: ${target}"
+      ;;
+  esac
+  rm -rf "$target"
+}
+
+note_original_coop_mods() {
+  local child found=0
+  [[ -d "${SOURCE:-}/Contents/Mods" ]] || return 0
+  # 原版和副本是同一个目录时不要把「即将删除的副本目录」说成原版。
+  # Do not describe the copy as the original when they are the same path.
+  if [[ "${SOURCE}" == "${DEST}" ]]; then
+    return 0
+  fi
+  for child in "$SOURCE/Contents/Mods"/*; do
+    [[ -d "$child" ]] || continue
+    if is_coop_package "$child"; then
+      found=1
+      note \
+        "原版 Mods 里有联机 Mod（不会修改原版）：$(basename "$child")" \
+        "The original app's Mods folder has the co-op Mod (the original app is not modified): $(basename "$child")"
+    fi
+  done
+  if [[ "$found" -eq 1 ]]; then
+    note \
+      "副本里只会留下一份即将安装的联机 Mod，不会和原版那份并排各留一份。" \
+      "The copy will keep a single co-op Mod package, not the original package beside the one being installed."
+  fi
+}
+
+purge_coop_family_in_dest() {
+  local child
+  REMOVED_COOP_COUNT=0
+  [[ -d "$DEST/Contents/Mods" ]] || return 0
+  for child in "$DEST/Contents/Mods"/*; do
+    [[ -d "$child" ]] || continue
+    if is_coop_package "$child"; then
+      note \
+        "已从副本移除同属联机 Mod 的旧目录，避免多份并存：$(basename "$child")" \
+        "Removed an older co-op Mod folder from the copy so only one remains: $(basename "$child")"
+      remove_tree_in_dest_mods "$child"
+      REMOVED_COOP_COUNT=$((REMOVED_COOP_COUNT + 1))
+    fi
+  done
+}
+
+stage_list_outside_dest() {
+  local input="$1"
+  local output="$2"
+  local root="$3"
+  local fallback="$4"
+  local pkg name dest_stage
+  mkdir -p "$TMP_WORK/stage"
+  : >"$output"
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    case "$pkg/" in
+      "$DEST/"*)
+        if [[ "$pkg" == "$root" ]]; then
+          name="$fallback"
+        else
+          name="$(basename "$pkg")"
+        fi
+        if [[ -z "$name" || "$name" == "." || "$name" == "/" ]]; then
+          name="mod"
+        fi
+        dest_stage="$TMP_WORK/stage/$name"
+        copy_tree "$pkg" "$dest_stage"
+        printf '%s\n' "$dest_stage" >>"$output"
+        ;;
+      *)
+        printf '%s\n' "$pkg" >>"$output"
+        ;;
+    esac
+  done <"$input"
+}
+
+drop_coop_packages() {
+  local input="$1"
+  local output="$2"
+  local pkg
+  : >"$output"
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    if is_coop_package "$pkg"; then
+      continue
+    fi
+    printf '%s\n' "$pkg" >>"$output"
+  done <"$input"
+}
+
+install_selected_packages() {
+  local list="$1"
+  local root="$2"
+  local fallback="$3"
+  local filtered="$TMP_WORK/filtered-list"
+  local ready="$TMP_WORK/ready-list"
+  local others="$TMP_WORK/others-list"
+  local incoming_ver
+  SKIPPED_SAME_VERSION=0
+  REMOVED_COOP_COUNT=0
+  filter_to_one_coop_family "$list" "$filtered"
+  stage_list_outside_dest "$filtered" "$ready" "$root" "$fallback"
+  if list_contains_coop_package "$ready"; then
+    incoming_ver="$(incoming_coop_version "$ready")"
+    scan_dest_coop_packages
+    if [[ "${ALLOW_SKIP_SAME:-0}" -eq 1 && "${EXISTING_COOP_COUNT:-0}" -eq 1 ]] && versions_same "$incoming_ver" "$EXISTING_COOP_VERSION"; then
+      drop_coop_packages "$ready" "$others"
+      if [[ ! -s "$others" ]]; then
+        SKIPPED_SAME_VERSION=1
+        note \
+          "副本里已经是这个联机 Mod 版本，无需重新安装：${EXISTING_COOP_VERSION}" \
+          "The copy already has this co-op Mod version. Reinstall was skipped: ${EXISTING_COOP_VERSION}"
+        note "COOP_MOD_RESULT skipped-same-version"
+        return 0
+      fi
+      ready="$others"
+    else
+      note_original_coop_mods
+      purge_coop_family_in_dest
+    fi
+  fi
+  install_packages "$ready" "$root" "$fallback"
+  if list_contains_coop_package "$ready"; then
+    note "COOP_MOD_RESULT updated"
+  fi
+}
+
+emit_coop_package_line() {
+  local dir="$1"
+  local ver
+  ver="$(package_version_label "$dir")"
+  [[ -n "$ver" ]] || ver="-"
+  printf 'COOP_MOD\t%s\t%s\n' "$ver" "$dir"
+}
+
+emit_coop_packages() {
+  local root="$1"
+  local child base
+  [[ -d "$root" ]] || return 0
+  if is_coop_package "$root"; then
+    emit_coop_package_line "$root"
+    return 0
+  fi
+  for child in "$root"/*; do
+    [[ -d "$child" ]] || continue
+    base="$(basename "$child")"
+    [[ "$base" == "__MACOSX" ]] && continue
+    if is_coop_package "$child"; then
+      emit_coop_package_line "$child"
+    fi
+  done
+}
+
+dedupe_dest_coop_packages() {
+  local keep_version="$1"
+  local child ver score best best_ver best_score
+  REMOVED_COOP_COUNT=0
+  best=""
+  best_ver=""
+  best_score=-1
+  [[ -d "$DEST/Contents/Mods" ]] || return 0
+  for child in "$DEST/Contents/Mods"/*; do
+    [[ -d "$child" ]] || continue
+    if ! is_coop_package "$child"; then
+      continue
+    fi
+    ver="$(package_version_label "$child")"
+    if [[ -n "$keep_version" ]] && ! versions_same "$ver" "$keep_version"; then
+      continue
+    fi
+    score="$(coop_package_score "$child" "$ver")"
+    if [[ -z "$best" ]]; then
+      best="$child"
+      best_ver="$ver"
+      best_score="$score"
+    elif version_is_newer "$ver" "$best_ver"; then
+      best="$child"
+      best_ver="$ver"
+      best_score="$score"
+    elif versions_tie "$ver" "$best_ver" && [[ "$score" -gt "$best_score" ]]; then
+      best="$child"
+      best_ver="$ver"
+      best_score="$score"
+    fi
+  done
+  if [[ -n "$keep_version" && -z "$best" ]]; then
+    die \
+      "副本里没有版本为 ${keep_version} 的联机 Mod，所以没有删除任何目录。" \
+      "No co-op Mod with version ${keep_version} is in the copy, so nothing was deleted."
+  fi
+  for child in "$DEST/Contents/Mods"/*; do
+    [[ -d "$child" ]] || continue
+    if ! is_coop_package "$child"; then
+      continue
+    fi
+    if [[ -n "$best" && "$child" == "$best" ]]; then
+      continue
+    fi
+    note \
+      "已从副本移除同属联机 Mod 的旧目录，避免多份并存：$(basename "$child")" \
+      "Removed an older co-op Mod folder from the copy so only one remains: $(basename "$child")"
+    remove_tree_in_dest_mods "$child"
+    REMOVED_COOP_COUNT=$((REMOVED_COOP_COUNT + 1))
+  done
 }
 
 install_packages() {
@@ -410,6 +1075,23 @@ parse_args() {
         UPDATE_MODS=1
         shift
         ;;
+      --list-coop-mods)
+        LIST_COOP_MODS=1
+        shift
+        ;;
+      --dedupe-coop-mods)
+        DEDUPE_COOP_MODS=1
+        shift
+        ;;
+      --keep-version)
+        [[ $# -ge 2 ]] || die "缺少版本。 / Missing version after --keep-version."
+        KEEP_VERSION="$2"
+        shift 2
+        ;;
+      --keep-version=*)
+        KEEP_VERSION="${1#*=}"
+        shift
+        ;;
       *)
         die \
           "未知参数：${1}" \
@@ -489,6 +1171,10 @@ validate_paths() {
 
 sign_dest() {
   local entitlements signed verified
+  if [[ "${DUCKOV_PREPARE_SKIP_SIGN:-}" == "1" ]]; then
+    note "已跳过签名（测试）。 / Skipped signing (test)."
+    return 0
+  fi
   entitlements="$(resolve_entitlements)"
   note \
     "正在用本机 codesign 身份 \"-\" 为副本签名（不使用 Apple 开发者证书）…" \
@@ -554,11 +1240,13 @@ refuse_same_bundle() {
 
 update_mods_only() {
   local chosen mods_root
-  require_macos
+  if [[ "${DUCKOV_PREPARE_SKIP_PLATFORM:-}" != "1" ]]; then
+    require_macos
+    command -v codesign >/dev/null 2>&1 || die \
+      "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
+      "codesign was not found. It ships with macOS; an Apple Developer account is not required."
+  fi
   command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
-  command -v codesign >/dev/null 2>&1 || die \
-    "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
-    "codesign was not found. It ships with macOS; an Apple Developer account is not required."
 
   TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/duckov-coop-mods.XXXXXX")"
   DEST="$(abs_path "$DEST")"
@@ -601,7 +1289,13 @@ update_mods_only() {
     "Installing the Mac co-op Mod into the copy's Contents/Mods/ (the original app is not modified, and the game is not copied again)." \
     "副本 / Copy: ${DEST}" \
     "Mod: ${MODS_DIR}"
-  install_packages "$chosen" "$mods_root" "$(basename "$mods_root")"
+  ALLOW_SKIP_SAME=1
+  install_selected_packages "$chosen" "$mods_root" "$(basename "$mods_root")"
+  if [[ "${SKIPPED_SAME_VERSION:-0}" -eq 1 ]]; then
+    note \
+      "未覆盖文件，也没有重新签名。 / Files were not overwritten, and the copy was not signed again."
+    return 0
+  fi
   if command -v xattr >/dev/null 2>&1; then
     xattr -dr com.apple.quarantine "$DEST/Contents/Mods" || true
   fi
@@ -706,7 +1400,8 @@ main() {
   fi
 
   if [[ -s "$chosen" ]]; then
-    install_packages "$chosen" "$mods_root" "$fallback"
+    ALLOW_SKIP_SAME=0
+    install_selected_packages "$chosen" "$mods_root" "$fallback"
   fi
 
   if command -v xattr >/dev/null 2>&1; then
@@ -752,5 +1447,243 @@ main() {
   fi
 }
 
+cmd_list_coop_mods() {
+  local root
+  if [[ -n "$MODS_DIR" ]]; then
+    MODS_DIR="$(abs_path "$MODS_DIR")"
+    root="$MODS_DIR"
+  else
+    [[ -n "${HOME:-}" ]] || die "HOME 未设置。 / HOME is not set."
+    DEST="$(abs_path "$DEST")"
+    root="$DEST/Contents/Mods"
+  fi
+  emit_coop_packages "$root"
+}
+
+cmd_dedupe_coop_mods() {
+  if [[ "${DUCKOV_PREPARE_SKIP_PLATFORM:-}" != "1" ]]; then
+    require_macos
+    command -v codesign >/dev/null 2>&1 || die \
+      "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
+      "codesign was not found. It ships with macOS; an Apple Developer account is not required."
+  fi
+  command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
+  [[ -n "${HOME:-}" ]] || die "HOME 未设置。 / HOME is not set."
+  TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/duckov-coop-dedupe.XXXXXX")"
+  DEST="$(abs_path "$DEST")"
+  if [[ -n "${SOURCE:-}" ]]; then
+    SOURCE="$(abs_path "$SOURCE")"
+  fi
+  case "$DEST" in
+    *.app) ;;
+    *)
+      die \
+        "目标必须以 .app 结尾：${DEST}" \
+        "Destination must end with .app: ${DEST}"
+      ;;
+  esac
+  if [[ ! -d "$DEST" || ! -f "$DEST/Contents/Info.plist" ]]; then
+    die \
+      "副本还不存在，或不是 App：${DEST}" \
+      "The co-op copy does not exist yet, or is not an app: ${DEST}"
+  fi
+  refuse_same_bundle
+  dedupe_dest_coop_packages "$KEEP_VERSION"
+  if [[ "${REMOVED_COOP_COUNT:-0}" -eq 0 ]]; then
+    note \
+      "副本里的联机 Mod 已经只有一份，无需改动。" \
+      "The copy already has a single co-op Mod folder. Nothing was changed."
+    note "COOP_MOD_RESULT skipped-same-version"
+    return 0
+  fi
+  note \
+    "已去掉重复的联机 Mod 目录，只保留一份。其他 Mod 未删除。" \
+    "Removed duplicate co-op Mod folders so only one remains. Other Mods were not deleted."
+  note "COOP_MOD_RESULT deduped"
+  if command -v xattr >/dev/null 2>&1; then
+    xattr -dr com.apple.quarantine "$DEST/Contents/Mods" || true
+  fi
+  sign_dest
+}
+
+run_self_test() {
+  local root mods incoming orig chosen list_out expected count child dllfix
+  local bash_bin
+  TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/duckov-coop-self.XXXXXX")"
+  root="$TMP_WORK"
+  bash_bin="${BASH:-bash}"
+  SOURCE="$root/Duckov.app"
+  DEST="$root/Duckov-COOP.app"
+  mods="$DEST/Contents/Mods"
+  mkdir -p "$DEST/Contents" "$mods/3591341282" "$mods/EscapeFromDuckovCoopMod" \
+    "$mods/BackpackExpansion" "$mods/NiceBackpack" "$mods/WeirdName" "$mods/ApiOnly"
+  printf '%s\n' 'plist' >"$DEST/Contents/Info.plist"
+  printf '%s\n' 'publishedFileId = 3591341282' 'name = EscapeFromDuckovCoopMod' 'version = ?' >"$mods/3591341282/info.ini"
+  printf '%s\n' 'old-workshop' >"$mods/3591341282/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'version = ?' >"$mods/EscapeFromDuckovCoopMod/info.ini"
+  printf '%s\n' 'x' >"$mods/EscapeFromDuckovCoopMod/INSTALL_1.4.1.txt"
+  printf '%s\n' 'old-melody' >"$mods/EscapeFromDuckovCoopMod/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'name = BackpackExpansion' 'description = mentions 3591341282 and EscapeFromDuckovCoopMod' 'publishedFileId = 111' >"$mods/BackpackExpansion/info.ini"
+  printf '%s\n' 'backpack' >"$mods/BackpackExpansion/BackpackExpansion.dll"
+  printf '%s\n' 'nice' >"$mods/NiceBackpack/NiceBackpack.dll"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' >"$mods/WeirdName/info.ini"
+  printf '%s\n' 'weird' >"$mods/WeirdName/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'api' >"$mods/ApiOnly/EscapeFromDuckovModApi.dll"
+
+  orig="$SOURCE/Contents/Mods/3591341282"
+  mkdir -p "$orig" "$SOURCE/Contents/Mods/BackpackExpansion"
+  printf '%s\n' 'publishedFileId = 3591341282' >"$orig/info.ini"
+  printf '%s\n' 'workshop-original' >"$orig/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'keep-backpack' >"$SOURCE/Contents/Mods/BackpackExpansion/BackpackExpansion.dll"
+
+  name_is_coop_family "3591341282" || die "self-test: workshop id was not recognized"
+  name_is_coop_family "EscapeFromDuckovCoopMod" || die "self-test: EscapeFromDuckovCoopMod was not recognized"
+  name_is_coop_family "Escape-From-Duckov-Coop" || die "self-test: hyphenated name was not recognized"
+  name_is_coop_family "escape_from_duckov_coop_mod" || die "self-test: underscored name was not recognized"
+  name_is_coop_family "逃离鸭科夫联机mod" || die "self-test: Chinese display name was not recognized"
+  if name_is_coop_family "BackpackExpansion"; then
+    die "self-test: backpack name was treated as the co-op mod"
+  fi
+  if name_is_coop_family "NiceBackpack"; then
+    die "self-test: unrelated mod name was treated as the co-op mod"
+  fi
+  is_coop_package "$mods/3591341282" || die "self-test: workshop folder was not a co-op package"
+  is_coop_package "$mods/WeirdName" || die "self-test: info.ini package was not recognized"
+  if is_coop_package "$mods/BackpackExpansion"; then
+    die "self-test: backpack info.ini was treated as the co-op mod"
+  fi
+  if is_coop_package "$mods/ApiOnly"; then
+    die "self-test: ModApi dll alone was treated as the co-op mod"
+  fi
+  if is_coop_package "$mods"; then
+    die "self-test: Mods root was treated as one co-op package"
+  fi
+  mkdir -p "$root/cn/逃离鸭科夫联机mod" "$root/hyphen/Escape-From-Duckov-Coop" "$root/rand/CustomBuild"
+  is_coop_package "$root/cn/逃离鸭科夫联机mod" || die "self-test: Chinese folder was not a co-op package"
+  is_coop_package "$root/hyphen/Escape-From-Duckov-Coop" || die "self-test: Escape-From-Duckov-Coop was not a co-op package"
+  printf '%s\n' 'x' >"$root/rand/CustomBuild/EscapeFromDuckovCoopMod.dll"
+  is_coop_package "$root/rand/CustomBuild" || die "self-test: main dll was not enough to identify the mod"
+
+  version_is_newer "1.4.2" "1.4.1" || die "self-test: 1.4.2 should be newer than 1.4.1"
+  if version_is_newer "1.4.1" "1.4.2"; then
+    die "self-test: 1.4.1 should not be newer than 1.4.2"
+  fi
+  version_is_newer "1.10.0" "1.9.9" || die "self-test: 1.10.0 should be newer than 1.9.9"
+  version_is_newer "1.4.2-test" "1.4.1" || die "self-test: 1.4.2-test should be newer than 1.4.1"
+  versions_same "V1.4.2-test" "1.4.2-test" || die "self-test: version labels should match"
+  if versions_same "1.4.2" "1.4.2-test"; then
+    die "self-test: 1.4.2 and 1.4.2-test should not match"
+  fi
+  if versions_same "" ""; then
+    die "self-test: empty versions should not count as the same"
+  fi
+
+  if command -v strings >/dev/null 2>&1 || [[ -x /usr/bin/strings ]]; then
+    dllfix="$root/dllpkg"
+    mkdir -p "$dllfix"
+    printf '%s\n' 'noise' '1.2.3' '1.2.3.0' 'ModVersion' '9.9.9' '1.4.2.0' '1.4.2' >"$dllfix/EscapeFromDuckovCoopMod.dll"
+    [[ "$(dll_version_label "$dllfix/EscapeFromDuckovCoopMod.dll")" == "1.4.2" ]] || die "self-test: dll version label was '$(dll_version_label "$dllfix/EscapeFromDuckovCoopMod.dll")'"
+    [[ "$(package_version_label "$dllfix")" == "1.4.2" ]] || die "self-test: package version did not fall back to the dll"
+  fi
+
+  incoming="$root/incoming"
+  mkdir -p "$incoming/EscapeFromDuckovCoopMod" "$incoming/BackpackExpansion" "$incoming/3591341282"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'version = ?' >"$incoming/EscapeFromDuckovCoopMod/info.ini"
+  printf '%s\n' 'new-melody' >"$incoming/EscapeFromDuckovCoopMod/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'x' >"$incoming/EscapeFromDuckovCoopMod/INSTALL_1.4.2-test.txt"
+  printf '%s\n' 'backpack-new' >"$incoming/BackpackExpansion/BackpackExpansion.dll"
+  printf '%s\n' 'publishedFileId = 3591341282' >"$incoming/3591341282/info.ini"
+  printf '%s\n' 'older-incoming' >"$incoming/3591341282/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'x' >"$incoming/3591341282/INSTALL_1.4.1.txt"
+  [[ "$(package_version_label "$incoming/EscapeFromDuckovCoopMod")" == "1.4.2-test" ]] || die "self-test: INSTALL file version was not preferred"
+
+  chosen="$root/chosen-packages"
+  printf '%s\n' "$incoming/EscapeFromDuckovCoopMod" "$incoming/BackpackExpansion" "$incoming/3591341282" >"$chosen"
+  ALLOW_SKIP_SAME=0
+  install_selected_packages "$chosen" "$incoming" "incoming"
+
+  [[ ! -d "$mods/3591341282" ]] || die "self-test: workshop folder remained in the copy"
+  [[ ! -d "$mods/WeirdName" ]] || die "self-test: info.ini duplicate remained in the copy"
+  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: new co-op package was not installed"
+  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/EscapeFromDuckovCoopMod.dll")" == "new-melody" ]] || die "self-test: new dll was not installed"
+  [[ "$(cat "$mods/BackpackExpansion/BackpackExpansion.dll")" == "backpack-new" ]] || die "self-test: backpack was not updated"
+  [[ "$(cat "$mods/NiceBackpack/NiceBackpack.dll")" == "nice" ]] || die "self-test: unrelated mod was changed"
+  [[ -f "$mods/ApiOnly/EscapeFromDuckovModApi.dll" ]] || die "self-test: ModApi-only folder was deleted"
+  [[ "$(cat "$orig/EscapeFromDuckovCoopMod.dll")" == "workshop-original" ]] || die "self-test: original app mod was modified"
+  [[ "$(cat "$SOURCE/Contents/Mods/BackpackExpansion/BackpackExpansion.dll")" == "keep-backpack" ]] || die "self-test: original backpack was modified"
+  count=0
+  for child in "$mods"/*; do
+    [[ -d "$child" ]] || continue
+    if is_coop_package "$child"; then
+      count=$((count + 1))
+    fi
+  done
+  [[ "$count" -eq 1 ]] || die "self-test: expected one co-op package, found ${count}"
+
+  printf '%s\n' 'marker' >"$mods/EscapeFromDuckovCoopMod/marker.txt"
+  printf '%s\n' "$incoming/EscapeFromDuckovCoopMod" >"$chosen"
+  ALLOW_SKIP_SAME=1
+  SKIPPED_SAME_VERSION=0
+  install_selected_packages "$chosen" "$incoming" "incoming"
+  [[ "${SKIPPED_SAME_VERSION}" -eq 1 ]] || die "self-test: same version was installed again"
+  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/marker.txt")" == "marker" ]] || die "self-test: same-version skip replaced the installed mod"
+
+  mkdir -p "$mods/3591341282"
+  printf '%s\n' 'publishedFileId = 3591341282' >"$mods/3591341282/info.ini"
+  printf '%s\n' 'stale' >"$mods/3591341282/EscapeFromDuckovCoopMod.dll"
+  dedupe_dest_coop_packages "1.4.2-test"
+  [[ ! -d "$mods/3591341282" ]] || die "self-test: dedupe left the older workshop folder"
+  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: dedupe removed the version to keep"
+  [[ "$(cat "$mods/NiceBackpack/NiceBackpack.dll")" == "nice" ]] || die "self-test: dedupe removed an unrelated mod"
+  [[ "${REMOVED_COOP_COUNT}" -ge 1 ]] || die "self-test: dedupe removed nothing"
+
+  list_out="$("$bash_bin" "$0" --list-coop-mods --mods-dir "$mods")"
+  expected="COOP_MOD"$'\t'"1.4.2-test"$'\t'"$mods/EscapeFromDuckovCoopMod"
+  printf '%s\n' "$list_out" | grep -F -q "$expected" || die "self-test: list output missing the installed mod: ${list_out}"
+  if printf '%s\n' "$list_out" | grep -F -q "NiceBackpack"; then
+    die "self-test: list included an unrelated mod: ${list_out}"
+  fi
+  if printf '%s\n' "$list_out" | grep -F -q "BackpackExpansion"; then
+    die "self-test: list included the backpack: ${list_out}"
+  fi
+
+  DUCKOV_PREPARE_SKIP_PLATFORM=1 DUCKOV_PREPARE_SKIP_SIGN=1 \
+    "$bash_bin" "$0" --dedupe-coop-mods --dest "$DEST" --keep-version "1.4.2-test" >"$root/dedupe-out.txt"
+  grep -F -q "COOP_MOD_RESULT skipped-same-version" "$root/dedupe-out.txt" || die "self-test: single package dedupe did not no-op"
+  [[ "$(cat "$mods/NiceBackpack/NiceBackpack.dll")" == "nice" ]] || die "self-test: CLI dedupe removed an unrelated mod"
+
+  if DUCKOV_PREPARE_SKIP_PLATFORM=1 DUCKOV_PREPARE_SKIP_SIGN=1 \
+    "$bash_bin" "$0" --dedupe-coop-mods --dest "$DEST" --keep-version "9.9.9"; then
+    die "self-test: missing keep-version was accepted"
+  fi
+  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: failed keep-version deleted the co-op mod"
+  [[ "$(cat "$orig/EscapeFromDuckovCoopMod.dll")" == "workshop-original" ]] || die "self-test: failed keep-version changed the original app"
+
+  printf '%s\n' 'marker' >"$mods/EscapeFromDuckovCoopMod/marker.txt"
+  DUCKOV_PREPARE_SKIP_PLATFORM=1 DUCKOV_PREPARE_SKIP_SIGN=1 \
+    "$bash_bin" "$0" --update-mods --dest "$DEST" --source "$SOURCE" --mods-dir "$incoming/EscapeFromDuckovCoopMod" >"$root/update-out.txt"
+  grep -F -q "COOP_MOD_RESULT skipped-same-version" "$root/update-out.txt" || die "self-test: update did not skip the same version: $(cat "$root/update-out.txt")"
+  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/marker.txt")" == "marker" ]] || die "self-test: update skip replaced the installed mod"
+  [[ "$(cat "$orig/EscapeFromDuckovCoopMod.dll")" == "workshop-original" ]] || die "self-test: update changed the original app"
+
+  note "self-test ok"
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  run_self_test
+  exit 0
+fi
+
 parse_args "$@"
+
+if [[ "$LIST_COOP_MODS" -eq 1 ]]; then
+  cmd_list_coop_mods
+  exit 0
+fi
+
+if [[ "$DEDUPE_COOP_MODS" -eq 1 ]]; then
+  cmd_dedupe_coop_mods
+  exit 0
+fi
+
 main

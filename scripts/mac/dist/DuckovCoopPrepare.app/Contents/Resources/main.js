@@ -22,6 +22,15 @@ var destField = null;
 var modsField = null;
 var logView = null;
 var statusField = null;
+var step1TitleLabel = null;
+var step2TitleLabel = null;
+var step3TitleLabel = null;
+var stepDone = [false, false, false, false];
+// Lowercased dest path prepared successfully in this session. Empty until then.
+// Green overrides the yellow "already on disk" state only for this path.
+var prepareReadyPath = '';
+// Last dest path whose Mods folder was scanned, so typing does not rescan.
+var lastModScanDest = '';
 var prepareButton = null;
 var prepareFill = null;
 var downloadButton = null;
@@ -320,32 +329,30 @@ function showChoices(title, info, titles) {
   for (i = 0; i < titles.length; i++) alert.addButtonWithTitle($(titles[i]));
   var code = asNumber(objc(alert.runModal));
   var index = code - firstButtonCode();
-  if (index < 0 || index >= titles.length) return 0;
+  if (index < 0 || index >= titles.length) return -1;
   return index;
 }
 
 function showPrepareDoneAlert() {
   var dest = fieldText(destField);
+  var title = '第一步已经完成，游戏副本已经创建好，是否进行第二步：同步原版配置（包括存档）到副本游戏位置？\n'
+    + 'Step 1 done — co-op copy is ready. Continue with Step 2: sync original config (including saves) to the copy?';
   var info = [
-    '副本已准备好。请只启动这份副本进行联机。不要把 Mods 放进原版 App。',
-    '各方的 ModVersion 必须完全一致。',
+    '请先完全退出原版 Duckov 和联机副本。同步会用来源镜像覆盖目标，并删除目标里多出来的文件。',
+    'Quit the original Duckov app and the co-op copy first. Sync mirrors the source onto the destination and deletes files that exist only there.',
     '',
-    'The co-op copy is ready. Launch only this copy for co-op. Do not put Mods in the original app.',
-    'Every peer must use the exact same ModVersion string.',
+    '若读取原版配置被拒绝，请打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」，加入 DuckovCoopPrepare.app 后再试。',
+    'If macOS blocks the original config folder, open System Settings → Privacy & Security → Full Disk Access, add DuckovCoopPrepare.app, then try again.',
     '',
-    dest,
-    '',
-    '要现在把原版配置位置同步到联机副本配置位置吗？这和窗口里的「（同步文件）原版配置 → 联机副本」是同一次操作：用来源镜像覆盖目标，并删除目标里多出来的文件。',
-    '请先完全退出原版 Duckov 和联机副本。',
-    'Sync the original config folder onto the co-op config folder now? This is the same action as "(sync files) original → co-op": it mirrors the source onto the destination and deletes files that exist only there.',
-    'Quit the original Duckov app and the co-op copy first.'
+    '副本 / Copy: ' + dest,
+    '请只启动这份副本进行联机。各方的 ModVersion 必须完全一致。',
+    'Launch only this copy for co-op. Every peer must use the exact same ModVersion string.'
   ].join('\n');
-  var choice = showChoices('完成 / Done', info, [
-    '好 / OK',
+  var choice = showChoices(title, info, [
     '立即同步 / Sync now',
     '不同步 / Don\'t sync'
   ]);
-  if (choice === 1) onSync('1to2', true);
+  if (choice === 0) onSync('1to2', true);
 }
 
 function guard(fn) {
@@ -402,7 +409,7 @@ function loadShared(resourcesDir) {
   var sandbox = {};
   var runner = new Function(
     'exports',
-    text + '\nexports.selectCoopModAsset = selectCoopModAsset;\nexports.safeReleaseDownloadUrl = safeReleaseDownloadUrl;\nexports.safeModZipName = safeModZipName;\n'
+    text + '\nexports.selectCoopModAsset = selectCoopModAsset;\nexports.safeReleaseDownloadUrl = safeReleaseDownloadUrl;\nexports.safeModZipName = safeModZipName;\nexports.releaseAssetVersionLabel = releaseAssetVersionLabel;\n'
   );
   runner(sandbox);
   return sandbox;
@@ -412,8 +419,10 @@ function introText() {
   var lines = [
     WINDOW_TITLE,
     '',
-    '第一步：准备联机副本。确认原版 Duckov.app 和副本位置（默认 ~/Applications/Duckov-COOP.app），再点这一步里的蓝色「准备联机副本」。原版不会被修改。',
-    'Step 1: Prepare the co-op copy. Confirm the original Duckov.app and the copy (default ~/Applications/Duckov-COOP.app), then click the blue Prepare co-op copy button in that step. The original app is not modified.',
+    '窗口最上方的「当前状态」会告诉你下一步该做什么。做完的步骤标题会变成绿色，并加上 ✅。',
+    'Current status at the top of the window says what to do next. A finished step\'s title turns green and gains a ✅.',
+    '第一步：准备联机副本。确认原版 Duckov.app 和副本位置（默认 ~/Applications/Duckov-COOP.app），再点这一步里的「准备联机副本」。副本还不存在时按钮是蓝色；打开时已经有副本则是黄色，点它会重新生成；这一次准备成功后变成绿色。原版不会被修改。',
+    'Step 1: Prepare the co-op copy. Confirm the original Duckov.app and the copy (default ~/Applications/Duckov-COOP.app), then click Prepare co-op copy in that step. The button is blue when the copy is not there yet, yellow when a copy is already on disk (clicking regenerates it), and green after a successful prepare in this session. The original app is not modified.',
     '第二步：配置文件同步。原版配置和联机副本配置可以互相镜像。同步前请退出两边的游戏。',
     'Step 2: Sync config files. The original config folder and the co-op config folder can be mirrored either way. Quit both games before syncing.',
     '第三步：配置（支持 Mac 的）联机 Mod。已经下载的话选择位置，会更新到副本；没有的话点下载按钮，自动下载并拷贝到副本的 Mods。',
@@ -551,8 +560,8 @@ function finishTask() {
     } catch (eSync) {}
     if (code === 0) {
       appendLogFile('\n退出码 / Exit code: 0\n同步完成 / Sync finished\n');
-      setStatus('同步完成。 / Sync finished.', true);
       setBusy(false);
+      markStep(2);
       showAlert(
         '同步完成 / Sync finished',
         '配置文件夹里的内容已按来源镜像到目标。这不会修改 .app 本身。\nThe config folder contents were mirrored onto the destination. The .app bundles themselves are not modified.'
@@ -574,12 +583,35 @@ function finishTask() {
   }
   if (kind === 'install-mod') {
     if (code === 0) {
+      var installLog = '';
+      try { installLog = readTextFile(logPath); } catch (eInstallLog) { installLog = ''; }
+      var skippedSame = installLog.indexOf('COOP_MOD_RESULT skipped-same-version') !== -1;
+      var dedupedOnly = installLog.indexOf('COOP_MOD_RESULT deduped') !== -1 && installLog.indexOf('COOP_MOD_RESULT updated') === -1;
+      var removedOld = installLog.indexOf('已从副本移除同属联机 Mod') !== -1;
       appendLogFile('\n退出码 / Exit code: 0\n已更新到副本 Mods / Updated into the copy\'s Mods\n');
-      setStatus('已更新到副本的 Mods。 / Updated into the copy\'s Mods folder.', true);
       setBusy(false);
+      markStep(3);
+      if (skippedSame) {
+        showAlert(
+          '已是最新版本 / Already the latest version',
+          '副本里已经是这个版本的联机 Mod，没有重新下载或覆盖。其他 Mod 没有被删除。\n\nThe copy already has this co-op Mod version. It was not downloaded or overwritten again. Other Mods were not deleted.\n\n' + fieldText(destField)
+        );
+        return;
+      }
+      if (dedupedOnly) {
+        showAlert(
+          '已去掉重复的联机 Mod / Removed the duplicate co-op Mod',
+          '副本里已经有这个版本，所以没有重新下载。多出来的旧联机 Mod 目录已去掉，只留一份。其他 Mod 没有删除。\n\nThis version was already in the copy, so it was not downloaded again. Extra older co-op Mod folders were removed so only one remains. Other Mods were not deleted.\n\n' + fieldText(destField)
+        );
+        return;
+      }
+      var updatedInfo = '支持 Mac 的联机 Mod 已放入副本的 Contents/Mods/，并已用本机 codesign 身份 "-" 重新签名。请只启动这份副本。不要把 Mod 放进原版 App。\n\nThe Mac-compatible co-op Mod is in the copy\'s Contents/Mods/, and the copy was re-signed with the local codesign identity "-". Launch only this copy. Do not put the Mod in the original app.';
+      if (removedOld) {
+        updatedInfo += '\n\n已去掉副本里同属这个联机 Mod 的旧目录，只保留一份。其他 Mod 没有删除。\nOlder folders of this same co-op Mod were removed from the copy. Only one remains. Other Mods were not deleted.';
+      }
       showAlert(
         '已更新到副本 / Updated into the copy',
-        '支持 Mac 的联机 Mod 已放入副本的 Contents/Mods/，并已用本机 codesign 身份 "-" 重新签名。请只启动这份副本。不要把 Mod 放进原版 App。\n\nThe Mac-compatible co-op Mod is in the copy\'s Contents/Mods/, and the copy was re-signed with the local codesign identity "-". Launch only this copy. Do not put the Mod in the original app.\n\n' + fieldText(destField)
+        updatedInfo + '\n\n' + fieldText(destField)
       );
       return;
     }
@@ -594,14 +626,26 @@ function finishTask() {
   }
   if (code === 0) {
     appendLogFile('\n退出码 / Exit code: 0\n完成 / Done\n');
-    setStatus('完成。副本已准备好。 / Done. The co-op copy is ready.', true);
+    stepDone[1] = true;
+    try { prepareReadyPath = normalize(fieldText(destField)).toLowerCase(); } catch (eReady) { prepareReadyPath = ''; }
+    lastModScanDest = prepareReadyPath;
+    try {
+      var preparedMods = listCoopMods('dest', normalize(fieldText(destField)));
+      if (preparedMods.length > 0) stepDone[3] = true;
+    } catch (ePrepared) {}
     setBusy(false);
+    refreshGuide();
     showPrepareDoneAlert();
     return;
   }
   appendLogFile('\n退出码 / Exit code: ' + code + '\n未完成 / Did not finish\n原版 App 没有被修改。 / The original app was not modified.\n');
   setStatus('未完成。请查看日志。原版未被修改。 / Did not finish. Read the log. The original app was not modified.', false);
+  try {
+    stepDone[1] = !!copyLooksPrepared();
+    if (!stepDone[1]) stepDone[3] = false;
+  } catch (eFailStep) {}
   setBusy(false);
+  paintStepHeaders();
   showAlert(
     '未完成 / Did not finish',
     '准备副本时出错。请查看窗口里的日志。原版 App 没有被修改。\n\nPreparing the copy failed. Read the log in the window. The original app was not modified.'
@@ -808,7 +852,7 @@ function onSync(direction, skipConfirm) {
   }
   info += '从 / From:\n' + src + '\n\n到 / To:\n' + dest;
   if (!skipConfirm && !showConfirm(title, info, '开始同步 / Start sync', '取消 / Cancel')) {
-    setStatus('已取消。 / Cancelled.', null);
+    refreshGuide();
     return;
   }
   setBusy(true);
@@ -867,7 +911,7 @@ function onPrepare() {
   }
   info += '复制可能需要几分钟。\nCopying can take several minutes.';
   if (!showConfirm('准备联机副本 / Prepare co-op copy', info, '开始 / Start', '取消 / Cancel')) {
-    setStatus('已取消。 / Cancelled.', null);
+    refreshGuide();
     return;
   }
   setBusy(true);
@@ -920,10 +964,62 @@ function onDownload() {
     showAlert('已取消 / Cancelled', 'Release 附件地址不符合预期，已取消下载。\nThe Release asset URL was not recognized. Download cancelled.');
     return;
   }
+  var assetVersion = '';
+  try {
+    if (shared.releaseAssetVersionLabel) assetVersion = String(shared.releaseAssetVersionLabel(asset.name, asset.tag) || '');
+  } catch (eVersion) {
+    assetVersion = '';
+  }
   var folder = chooseDownloadFolder();
   var zipPath = joinPath(folder, asset.name);
   var unzipName = String(asset.name).replace(/\.zip$/i, '');
   var unzipPath = joinPath(folder, unzipName);
+  var chosenMods = normalize(fieldText(modsField));
+  if (assetVersion) {
+    setStatus('正在确认是否已经有这个版本… / Checking whether this version is already installed…', null);
+    pump();
+    if (copyIsReady()) {
+      var installed = listCoopMods('dest', normalize(fieldText(destField)));
+      var matching = 0;
+      var mi;
+      for (mi = 0; mi < installed.length; mi++) {
+        if (versionsEqual(installed[mi].version, assetVersion)) matching += 1;
+      }
+      if (installed.length > 1 && matching > 0) {
+        appendLogFile('副本里已有版本 ' + assetVersion + '，但还有重复的旧联机 Mod。将去掉重复项，不重新下载。\nVersion ' + assetVersion + ' is already in the copy, along with a duplicate. Duplicates will be removed. The download was skipped.\n');
+        startDedupe(assetVersion);
+        return;
+      }
+      if (installed.length === 1 && matching === 1) {
+        setBusy(false);
+        markStep(3);
+        appendLogFile('副本里已经是版本 ' + assetVersion + '，跳过下载。\nThe copy already has version ' + assetVersion + '. Skipped the download.\n');
+        showAlert(
+          '已是最新版本 / Already the latest version',
+          '副本里已经是这个版本的联机 Mod（' + assetVersion + '），无需重新下载。\n\nThe copy already has this co-op Mod version (' + assetVersion + '). The download was skipped.\n\n' + fieldText(destField)
+        );
+        return;
+      }
+    }
+    var reuse = '';
+    if (chosenMods && folderHasVersion(chosenMods, assetVersion)) reuse = chosenMods;
+    else if (folderHasVersion(unzipPath, assetVersion)) reuse = unzipPath;
+    if (reuse) {
+      setField(modsField, reuse);
+      appendLogFile('本地已有相同版本（' + assetVersion + '），跳过下载。\nThis version is already on disk (' + assetVersion + '). Skipped the download.\n' + reuse + '\n');
+      if (copyIsReady()) {
+        startInstallMod(reuse);
+        return;
+      }
+      setBusy(false);
+      setStatus('已有相同版本，已记下位置。请先完成第一步。 / This version is already on disk. Finish Step 1 first.', null);
+      showAlert(
+        '已有相同版本 / This version is already on disk',
+        '没有重新下载。副本还不存在，请先完成第一步「准备联机副本」。准备时会把这个 Mod 装进副本。\n\nThe download was skipped. The co-op copy is not ready yet. Finish Step 1, Prepare co-op copy. Prepare installs this Mod into the copy.\n\n' + reuse
+      );
+      return;
+    }
+  }
   var kindLabel = asset.prerelease ? '预发布 / pre-release' : '正式版 / release';
   var header = [
     '',
@@ -1000,13 +1096,19 @@ function onChooseSource() {
   var start = '/Applications';
   if (current && fileExists(current)) start = current;
   var picked = chooseApp('选择原版 Duckov.app。\nChoose the original Duckov.app.', start);
-  if (picked) setField(sourceField, picked);
+  if (picked) {
+    setField(sourceField, picked);
+    syncStepsToDest();
+  }
 }
 
 function onChooseDest() {
   if (busy) return;
   var picked = chooseDestPath();
-  if (picked) setField(destField, picked);
+  if (picked) {
+    setField(destField, picked);
+    syncStepsToDest();
+  }
 }
 
 function copyIsReady() {
@@ -1242,6 +1344,10 @@ function paintLayer(view, r, g, b, radius) {
 var WINDOW_TITLE = '《逃离鸭科夫》Mac 联机 Mod 支持工具';
 // English equivalent: Escape from Duckov — Mac co-op Mod support tool.
 var PREPARE_BUTTON_TITLE = '准备联机副本 / Prepare co-op copy';
+var PREPARE_READY_TITLE_ZH = '已经准备好联机副本，可以开始用副本App游戏了';
+var PREPARE_READY_TITLE_EN = 'Co-op copy is ready — you can play with the copy App now';
+var PREPARE_EXISTS_TITLE_ZH = '检测到联机副本App已经存在，可以下一步或者点此按钮重新生成';
+var PREPARE_EXISTS_TITLE_EN = 'Co-op copy App already found — continue to next steps, or click to regenerate';
 var PREPARE_TITLE_SIZE = 14;
 var SYNC_TO_COOP_TITLE = '（同步文件）原版配置 → 联机副本 / (sync files) original → co-op';
 var SYNC_TO_ORIGINAL_TITLE = '（同步文件）联机副本 → 原版配置 / (sync files) co-op → original';
@@ -1253,6 +1359,9 @@ var STEP3_HELP = '已经下载了最新版支持 Mac 联机的 Mod 的话可以�
 var DOWNLOAD_MOD_TITLE_ZH = '自动下载并更新最新支持 Mac 的联机 Mod 到副本 Mods 位置';
 var DOWNLOAD_MOD_TITLE_EN = 'Auto-download and update the latest Mac-compatible co-op Mod into the copy\'s Mods folder';
 var DOWNLOAD_MOD_TITLE = DOWNLOAD_MOD_TITLE_ZH + ' / ' + DOWNLOAD_MOD_TITLE_EN;
+// 70 is about 1.5× the previous 46-point download button, so the two-line title stays readable.
+var DOWNLOAD_BUTTON_HEIGHT = 70;
+var STATUS_TITLE = '当前状态： / Current status:';
 var OPEN_GITHUB_TITLE = '打开 GitHub 页面 / Open GitHub';
 var MODS_PLACEHOLDER = '已下载的 Mac 联机 Mod 文件夹 / Downloaded Mac co-op Mod folder';
 
@@ -1296,25 +1405,75 @@ function makeCenteredTitleImage(title, font, color, width, height) {
   return image;
 }
 
-function stylePrimaryTitle(button) {
+// idle: the dest .app is not on disk (blue). exists: it is already there (yellow).
+// ready: this session prepared that same path (green). Green overrides yellow.
+function prepareVisualState() {
+  var dest = '';
+  try { dest = normalize(fieldText(destField)); } catch (e) { dest = ''; }
+  var key = dest ? dest.toLowerCase() : '';
+  if (prepareReadyPath && key === prepareReadyPath && copyLooksPrepared()) return 'ready';
+  if (copyLooksPrepared()) return 'exists';
+  return 'idle';
+}
+
+function preparePalette(state, enabled) {
+  if (state === 'ready') {
+    if (enabled) return { r: 0.15, g: 0.58, b: 0.30, text: $.NSColor.whiteColor };
+    return { r: 0.42, g: 0.56, b: 0.46, text: $.NSColor.whiteColor };
+  }
+  if (state === 'exists') {
+    var ink = rgb(0.12, 0.10, 0.02);
+    if (enabled) return { r: 0.98, g: 0.80, b: 0.18, text: ink };
+    return { r: 0.72, g: 0.66, b: 0.40, text: ink };
+  }
+  if (enabled) return { r: 0.10, g: 0.38, b: 0.78, text: $.NSColor.whiteColor };
+  return { r: 0.45, g: 0.49, b: 0.54, text: $.NSColor.whiteColor };
+}
+
+function prepareTitleLines(state) {
+  if (state === 'ready') return [PREPARE_READY_TITLE_ZH, PREPARE_READY_TITLE_EN];
+  if (state === 'exists') return [PREPARE_EXISTS_TITLE_ZH, PREPARE_EXISTS_TITLE_EN];
+  return null;
+}
+
+function prepareTitleLabel(state) {
+  var lines = prepareTitleLines(state);
+  if (!lines) return PREPARE_BUTTON_TITLE;
+  return lines[0] + ' / ' + lines[1];
+}
+
+function stylePrimaryTitle(button, enabled) {
   if (!button) return;
-  var font = $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE);
-  var bounds = viewSize(button, 460, 34);
+  var state = prepareVisualState();
+  if (enabled === undefined) enabled = true;
+  var palette = preparePalette(state, !!enabled);
+  var fontSize = PREPARE_TITLE_SIZE;
+  var font = $.NSFont.boldSystemFontOfSize(fontSize);
+  var bounds = viewSize(button, 900, 62);
+  var lines = prepareTitleLines(state);
+  var label = prepareTitleLabel(state);
+  if (lines) {
+    var maxW = bounds.width > 40 ? bounds.width - 24 : 800;
+    var zhW = measureText(lines[0], font).width;
+    var enW = measureText(lines[1], font).width;
+    if (zhW > maxW || enW > maxW) {
+      fontSize = 13;
+      font = $.NSFont.boldSystemFontOfSize(fontSize);
+    }
+  }
   var image = null;
   try {
-    image = makeCenteredTitleImage(
-      PREPARE_BUTTON_TITLE,
-      font,
-      $.NSColor.whiteColor,
-      bounds.width,
-      bounds.height
-    );
+    if (lines) {
+      image = makeStackedTitleImage(lines, font, palette.text, bounds.width, bounds.height);
+    } else {
+      image = makeCenteredTitleImage(label, font, palette.text, bounds.width, bounds.height);
+    }
   } catch (e0) {
     image = null;
   }
   try { button.setAttributedTitle(objc($.NSAttributedString.alloc).initWithString($(''))); } catch (e1) {}
   if (!image) {
-    try { button.setTitle($(PREPARE_BUTTON_TITLE)); } catch (e2) {}
+    try { button.setTitle($(label)); } catch (e2) {}
     return;
   }
   try { button.setTitle($('')); } catch (e3) {}
@@ -1330,19 +1489,19 @@ function stylePrimaryTitle(button) {
     cell.setImageScaling(fit);
     cell.setBordered(false);
   } catch (e8) {}
-  try { button.setAccessibilityLabel($(PREPARE_BUTTON_TITLE)); } catch (e9) {}
+  try { button.setAccessibilityLabel($(label)); } catch (e9) {}
+  try { button.setToolTip($(label)); } catch (e10) {}
 }
 
 function paintPrepareButton(enabled) {
-  var r = enabled ? 0.10 : 0.45;
-  var g = enabled ? 0.38 : 0.49;
-  var b = enabled ? 0.78 : 0.54;
+  var palette = preparePalette(prepareVisualState(), !!enabled);
   if (prepareFill) {
-    try { prepareFill.setFillColor(rgb(r, g, b)); } catch (e) {}
+    try { prepareFill.setFillColor(rgb(palette.r, palette.g, palette.b)); } catch (e) {}
   }
   if (!prepareButton) return;
-  paintLayer(prepareButton, r, g, b, 6);
-  stylePrimaryTitle(prepareButton);
+  paintLayer(prepareButton, palette.r, palette.g, palette.b, 6);
+  stylePrimaryTitle(prepareButton, !!enabled);
+  try { prepareButton.setBezelColor(rgb(palette.r, palette.g, palette.b)); } catch (e2) {}
 }
 
 function makeStackedTitleImage(lines, font, color, width, height) {
@@ -1408,8 +1567,16 @@ function applyImageOnly(button, image, label) {
 
 function styleDownloadButton(button) {
   if (!button) return;
-  var bounds = viewSize(button, 900, 46);
-  var font = $.NSFont.systemFontOfSize(12);
+  var bounds = viewSize(button, 900, DOWNLOAD_BUTTON_HEIGHT);
+  var fontSize = 14;
+  var font = $.NSFont.systemFontOfSize(fontSize);
+  var maxW = bounds.width > 40 ? bounds.width - 24 : 800;
+  var enW = measureText(DOWNLOAD_MOD_TITLE_EN, font).width;
+  var zhW = measureText(DOWNLOAD_MOD_TITLE_ZH, font).width;
+  if (enW > maxW || zhW > maxW) {
+    fontSize = 13;
+    font = $.NSFont.systemFontOfSize(fontSize);
+  }
   var color = $.NSColor.blackColor;
   var image = null;
   try {
@@ -1559,6 +1726,10 @@ function registerController() {
         types: ['void', ['id']],
         implementation: function () { guard(onChooseDest); }
       },
+      'controlTextDidChange:': {
+        types: ['void', ['id']],
+        implementation: function () { guard(onPathsEdited); }
+      },
       'chooseMods:': {
         types: ['void', ['id']],
         implementation: function () { guard(onChooseMods); }
@@ -1615,71 +1786,350 @@ function registerController() {
   });
 }
 
+function makeSectionBox(x, y, w, h, fillR, fillG, fillB, borderR, borderG, borderB) {
+  var box = objc($.NSBox.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
+  try { box.setTitle($('')); } catch (e0) {}
+  try { box.setTitlePosition(0); } catch (e1) {}
+  try { box.setBoxType(4); } catch (e2) {}
+  try { box.setBorderType(1); } catch (e3) {}
+  try { box.setBorderWidth(1.5); } catch (e4) {}
+  try { box.setCornerRadius(8); } catch (e5) {}
+  try { box.setFillColor(rgb(fillR, fillG, fillB)); } catch (e6) {}
+  try { box.setBorderColor(rgb(borderR, borderG, borderB)); } catch (e7) {}
+  try { box.setTransparent(false); } catch (e8) {}
+  return box;
+}
+
+// -1 is NSWindowBelow on every ABI. Do not use a named AppKit alignment constant here.
+function addBoxBehind(parent, box) {
+  try {
+    parent.addSubviewPositionedRelativeTo(box, -1, null);
+    return;
+  } catch (e1) {}
+  try {
+    var subs = objc(parent.subviews);
+    var first = subs && subs.objectAtIndex ? subs.objectAtIndex(0) : null;
+    if (first) {
+      parent.addSubviewPositionedRelativeTo(box, -1, first);
+      return;
+    }
+  } catch (e2) {}
+  parent.addSubview(box);
+}
+
+function guideTextFor(s1, s2, s3, sourceMissing) {
+  if (!s1 && !s2 && !s3) {
+    if (sourceMissing) {
+      return '下一步：先做第一步。点「选择…」指定已经安装的原版 Duckov.app，确认副本保存位置，再点蓝色「准备联机副本」。\n'
+        + 'Next: start with Step 1. Click Choose and select the installed Duckov.app, confirm where to save the copy, then click the blue Prepare co-op copy button.';
+    }
+    return '下一步：从第一步开始。确认原版游戏和副本保存位置，然后点蓝色「准备联机副本」。原版游戏不会被修改。\n'
+      + 'Next: start with Step 1. Confirm the original game and where to save the copy, then click the blue Prepare co-op copy button. The original game is not modified.';
+  }
+  if (!s1 && s2 && !s3) {
+    return '配置文件夹看起来已经对齐。下一步仍请先做第一步：准备联机副本。\n'
+      + 'The config folders already look aligned. Next, still start with Step 1: prepare the co-op copy.';
+  }
+  if (!s1) {
+    return '下一步：先做第一步，准备联机副本。原版游戏不会被修改。\n'
+      + 'Next: start with Step 1 and prepare the co-op copy. The original game is not modified.';
+  }
+  if (!s2 && !s3) {
+    return '第一步已完成，副本已经准备好。下一步：做第二步，把原版配置（包括存档）同步到副本；再做第三步，安装支持 Mac 的联机 Mod。\n'
+      + 'Step 1 is done and the co-op copy is ready. Next: do Step 2 to sync the original config (including saves) into the copy, then Step 3 to install the Mac-compatible co-op Mod.';
+  }
+  if (s2 && !s3) {
+    return '第一步和第二步已完成。下一步：做第三步。点下载按钮，或选择已经下载的支持 Mac 的联机 Mod，它会放进副本。\n'
+      + 'Steps 1 and 2 are done. Next: do Step 3. Click the download button, or choose the Mac-compatible co-op Mod you already downloaded. It goes into the copy.';
+  }
+  if (!s2 && s3) {
+    return '副本和联机 Mod 已就绪。若要把原版存档带到副本，请做第二步：同步原版配置（包括存档）。同步前请退出两边的游戏。\n'
+      + 'The copy and the co-op Mod are ready. To bring original saves into the copy, do Step 2: sync the original config (including saves). Quit both games before syncing.';
+  }
+  return '三步都已完成。请只启动副本进行联机。一起玩的人需要使用同一个 Mod 版本。\n'
+    + 'All three steps are done. Launch only the co-op copy for co-op. Everyone you play with needs the same Mod version.';
+}
+
+function guideStatusText() {
+  var source = '';
+  try { source = normalize(fieldText(sourceField)); } catch (e) { source = ''; }
+  var sourceMissing = !source || !fileExists(source);
+  return guideTextFor(!!stepDone[1], !!stepDone[2], !!stepDone[3], sourceMissing);
+}
+
+function paintStepTitle(label, base, done) {
+  if (!label) return;
+  var text = done ? (base + ' ✅') : base;
+  try { label.setStringValue($(text)); } catch (e0) {}
+  try { label.setTextColor(done ? rgb(0.0, 0.45, 0.18) : rgb(0.08, 0.27, 0.48)); } catch (e1) {}
+}
+
+function paintStepHeaders() {
+  paintStepTitle(step1TitleLabel, STEP1_TITLE, stepDone[1]);
+  paintStepTitle(step2TitleLabel, STEP2_TITLE, stepDone[2]);
+  paintStepTitle(step3TitleLabel, STEP3_TITLE, stepDone[3]);
+}
+
+function refreshGuide() {
+  paintStepHeaders();
+  var all = !!(stepDone[1] && stepDone[2] && stepDone[3]);
+  setStatus(guideStatusText(), all ? true : null);
+}
+
+function markStep(n) {
+  if (n >= 1 && n <= 3) stepDone[n] = true;
+  refreshGuide();
+}
+
+function normalizeVersionLabel(text) {
+  var value = trim(String(text || '')).toLowerCase();
+  if (value === '-' || value === '?' || value === 'unknown') return '';
+  if (value.charAt(0) === 'v') value = value.substring(1);
+  return value;
+}
+
+function versionsEqual(a, b) {
+  var left = normalizeVersionLabel(a);
+  var right = normalizeVersionLabel(b);
+  return !!left && left === right;
+}
+
+function listCoopMods(which, path) {
+  var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
+  if (!script || !fileExists(script) || !path) return [];
+  var args = ['/bin/bash', script, '--list-coop-mods'];
+  if (which === 'dest') args.push('--dest', path);
+  else args.push('--mods-dir', path);
+  var result = null;
+  try { result = runSync(args); } catch (e) { return []; }
+  if (!result || result.code !== 0) return [];
+  var lines = String(result.stdout || '').split('\n');
+  var out = [];
+  var i;
+  for (i = 0; i < lines.length; i++) {
+    if (lines[i].indexOf('COOP_MOD\t') !== 0) continue;
+    var parts = lines[i].split('\t');
+    if (parts.length < 3) continue;
+    out.push({ version: parts[1], path: parts.slice(2).join('\t') });
+  }
+  return out;
+}
+
+function folderHasVersion(path, version) {
+  if (!path || !version || !fileExists(path)) return false;
+  var found = listCoopMods('mods', path);
+  var i;
+  for (i = 0; i < found.length; i++) {
+    if (versionsEqual(found[i].version, version)) return true;
+  }
+  return false;
+}
+
+function startDedupe(version) {
+  if (quitting) return;
+  var source = normalize(fieldText(sourceField));
+  var dest = normalize(fieldText(destField));
+  var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
+  if (!fileExists(script)) {
+    setBusy(false);
+    showAlert(
+      '找不到准备脚本 / Prepare script is missing',
+      '请重新下载 DuckovCoopPrepare-mac.zip。\nDownload DuckovCoopPrepare-mac.zip again.\n\n' + script
+    );
+    return;
+  }
+  setBusy(true);
+  setStatus('副本里已有这个版本。正在去掉重复的旧联机 Mod… / This version is already in the copy. Removing duplicate older co-op Mod folders…', null);
+  var argv = ['/bin/bash', script, '--dedupe-coop-mods', '--dest', dest, '--keep-version', version];
+  if (source) argv.push('--source', source);
+  var header = [
+    '',
+    '副本里已有这个版本，跳过下载，只去掉重复的旧联机 Mod。',
+    'This version is already in the copy. Skipping the download and removing duplicate older co-op Mod folders.',
+    '版本 / Version: ' + version,
+    '副本 / Copy: ' + dest,
+    '命令 / Command: ' + previewArgs(argv),
+    ''
+  ].join('\n');
+  startTask(argv, 'install-mod', header, false);
+}
+
+function directoryNames(path) {
+  if (!path || !fileExists(path)) return null;
+  try {
+    var fm = objc($.NSFileManager.defaultManager);
+    var names = fm.contentsOfDirectoryAtPathError($(String(path)), null);
+    if (!names) return null;
+    var raw = ObjC.deepUnwrap(names);
+    if (!raw || typeof raw.length !== 'number') return null;
+    var out = [];
+    var i;
+    for (i = 0; i < raw.length; i++) {
+      var name = String(raw[i]);
+      if (!name || name === '.DS_Store') continue;
+      out.push(name);
+    }
+    out.sort();
+    return out;
+  } catch (e) {
+    return null;
+  }
+}
+
+function configsLookSynced() {
+  var left = directoryNames(originalConfigDir());
+  var right = directoryNames(coopConfigDir());
+  if (!left || !right) return false;
+  if (left.length === 0 || left.length !== right.length) return false;
+  var sawSaves = false;
+  var i;
+  for (i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false;
+    if (left[i] === 'Saves') sawSaves = true;
+  }
+  return sawSaves;
+}
+
+function copyLooksPrepared() {
+  var dest = normalize(fieldText(destField));
+  var source = normalize(fieldText(sourceField));
+  if (!dest || !endsWithApp(dest)) return false;
+  if (!fileExists(joinPath(dest, 'Contents/Info.plist'))) return false;
+  if (source && dest.toLowerCase() === source.toLowerCase()) return false;
+  return true;
+}
+
+function detectExistingProgress() {
+  try {
+    if (copyLooksPrepared()) stepDone[1] = true;
+    if (configsLookSynced()) stepDone[2] = true;
+    if (stepDone[1]) {
+      var found = listCoopMods('dest', normalize(fieldText(destField)));
+      if (found.length > 0) stepDone[3] = true;
+      lastModScanDest = normalize(fieldText(destField)).toLowerCase();
+    }
+  } catch (e) {}
+}
+
+// Dest or source text changed. Step 1 follows whether that copy exists.
+// A path prepared earlier this session stays green only while it still matches.
+function syncStepsToDest() {
+  var prepared = false;
+  var destKey = '';
+  try {
+    prepared = copyLooksPrepared();
+    destKey = normalize(fieldText(destField)).toLowerCase();
+  } catch (e) {
+    prepared = false;
+  }
+  stepDone[1] = !!prepared;
+  if (!prepared) {
+    stepDone[3] = false;
+    lastModScanDest = destKey;
+  } else if (destKey !== lastModScanDest) {
+    lastModScanDest = destKey;
+    try {
+      var found = listCoopMods('dest', normalize(fieldText(destField)));
+      stepDone[3] = found.length > 0;
+    } catch (e2) {}
+  }
+  refreshGuide();
+  paintPrepareButton(!busy);
+}
+
+function onPathsEdited() {
+  if (busy) return;
+  syncStepsToDest();
+}
+
 function buildInterface(app) {
   var windowWidth = 960;
-  var margin = 20;
-  var inner = windowWidth - margin * 2;
+  var outer = 12;
+  var boxPadX = 8;
+  var boxPadTop = 8;
+  var boxPadBottom = 8;
+  var boxGap = 8;
+  var contentX = outer + boxPadX;
+  var contentW = windowWidth - (outer * 2) - (boxPadX * 2);
+  var boxX = outer;
+  var boxW = windowWidth - outer * 2;
+
   var topInset = 8;
   var bottomInset = 10;
   var githubH = 28;
   var githubGap = 8;
-  var sectionGap = 8;
-  var headerGap = 3;
-  var helpGap = 5;
+  var headerGap = 4;
+  var helpGap = 6;
   var captionZhH = 20;
   var captionZhGap = 1;
   var captionEnH = 16;
   var captionEnGap = 2;
   var pathRowH = 30;
   var pathRowGap = 4;
-  var prepareH = 34;
-  var prepareW = 460;
+  var prepareFont = $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE);
+  var prepareLine = measureText(PREPARE_EXISTS_TITLE_ZH, prepareFont).height;
+  if (!(prepareLine > 0)) prepareLine = 18;
+  var prepareH = Math.ceil(prepareLine * 2 + 20);
+  if (prepareH < 62) prepareH = 62;
+  var prepareW = contentW;
   var prepareTopGap = 6;
-  var explainGap = 5;
+  var explainGap = 6;
   var configBtnH = 30;
-  var configBtnGapY = 5;
-  var fieldGap = 5;
-  var downloadH = 46;
-  var statusH = 28;
-  var statusGap = 3;
+  var configBtnGapY = 6;
+  var fieldGap = 6;
+  var downloadH = DOWNLOAD_BUTTON_HEIGHT;
   var progressH = 16;
-  var progressGap = 3;
-  var logH = 120;
+  var progressGap = 4;
+  var logH = 96;
 
   var fontStep = $.NSFont.boldSystemFontOfSize(16);
   var fontHelp = $.NSFont.systemFontOfSize(12);
   var fontExplain = $.NSFont.systemFontOfSize(11);
+  var fontStatus = $.NSFont.systemFontOfSize(12);
   var explainText = configExplanation();
-  var step1HeaderH = measureWrappedHeight(STEP1_TITLE, inner, fontStep, 20);
-  var step1HelpH = measureWrappedHeight(STEP1_HELP, inner, fontHelp, 16);
-  var step2HeaderH = measureWrappedHeight(STEP2_TITLE, inner, fontStep, 20);
-  var explainH = measureWrappedHeight(explainText, inner, fontExplain, 14);
-  var step3HeaderH = measureWrappedHeight(STEP3_TITLE, inner, fontStep, 20);
-  var step3HelpH = measureWrappedHeight(STEP3_HELP, inner, fontHelp, 16);
+  var step1TitleMeasure = STEP1_TITLE + ' ✅';
+  var step2TitleMeasure = STEP2_TITLE + ' ✅';
+  var step3TitleMeasure = STEP3_TITLE + ' ✅';
+  var step1HeaderH = measureWrappedHeight(step1TitleMeasure, contentW, fontStep, 20);
+  var step1HelpH = measureWrappedHeight(STEP1_HELP, contentW, fontHelp, 16);
+  var step2HeaderH = measureWrappedHeight(step2TitleMeasure, contentW, fontStep, 20);
+  var explainH = measureWrappedHeight(explainText, contentW, fontExplain, 14);
+  var step3HeaderH = measureWrappedHeight(step3TitleMeasure, contentW, fontStep, 20);
+  var step3HelpH = measureWrappedHeight(STEP3_HELP, contentW, fontHelp, 16);
   if (step1HeaderH > 64) step1HeaderH = 64;
   if (step1HelpH > 72) step1HelpH = 72;
   if (step2HeaderH > 64) step2HeaderH = 64;
   if (explainH > 120) explainH = 120;
-  if (step3HeaderH > 72) step3HeaderH = 72;
+  if (step3HeaderH > 80) step3HeaderH = 80;
   if (step3HelpH > 88) step3HelpH = 88;
+
+  var statusSamples = [
+    guideTextFor(false, false, false, true),
+    guideTextFor(false, false, false, false),
+    guideTextFor(false, true, false, false),
+    guideTextFor(false, false, true, false),
+    guideTextFor(false, true, true, false),
+    guideTextFor(true, false, false, false),
+    guideTextFor(true, true, false, false),
+    guideTextFor(true, false, true, false),
+    guideTextFor(true, true, true, false)
+  ];
+  var statusTitleH = 22;
+  var statusBodyH = 44;
+  var sampleIndex;
+  for (sampleIndex = 0; sampleIndex < statusSamples.length; sampleIndex++) {
+    var sampleH = measureWrappedHeight(statusSamples[sampleIndex], contentW, fontStatus, 16);
+    if (sampleH > statusBodyH) statusBodyH = sampleH;
+  }
+  if (statusBodyH > 80) statusBodyH = 80;
 
   var pathGroup = captionZhH + captionZhGap + captionEnH + captionEnGap + pathRowH;
   var windowHeight = topInset
     + githubH + githubGap
-    + step1HeaderH + headerGap
-    + step1HelpH + helpGap
-    + pathGroup + pathRowGap
-    + pathGroup + prepareTopGap
-    + prepareH + sectionGap
-    + step2HeaderH + headerGap
-    + explainH + explainGap
-    + configBtnH + configBtnGapY
-    + configBtnH + sectionGap
-    + step3HeaderH + headerGap
-    + step3HelpH + helpGap
-    + pathRowH + fieldGap
-    + downloadH + sectionGap
-    + statusH + statusGap
+    + boxPadTop + statusTitleH + 4 + statusBodyH + boxPadBottom + boxGap
+    + boxPadTop + step1HeaderH + headerGap + step1HelpH + helpGap + pathGroup + pathRowGap + pathGroup + prepareTopGap + prepareH + boxPadBottom + boxGap
+    + boxPadTop + step2HeaderH + headerGap + explainH + explainGap + configBtnH + configBtnGapY + configBtnH + boxPadBottom + boxGap
+    + boxPadTop + step3HeaderH + headerGap + step3HelpH + helpGap + pathRowH + fieldGap + downloadH + boxPadBottom + boxGap
     + progressH + progressGap
     + logH
     + bottomInset;
@@ -1689,6 +2139,21 @@ function buildInterface(app) {
     var y = windowHeight - cursor - h;
     cursor += h + gap;
     return y;
+  }
+
+  var sectionStart = 0;
+  function beginSection() {
+    sectionStart = cursor;
+    cursor += boxPadTop;
+  }
+  function endSection(fillR, fillG, fillB, borderR, borderG, borderB) {
+    cursor += boxPadBottom;
+    var height = cursor - sectionStart;
+    var y = windowHeight - cursor;
+    var box = makeSectionBox(boxX, y, boxW, height, fillR, fillG, fillB, borderR, borderG, borderB);
+    addBoxBehind(content, box);
+    cursor += boxGap;
+    return box;
   }
 
   mainWindow = objc($.NSWindow.alloc).initWithContentRectStyleMaskBackingDefer(
@@ -1702,10 +2167,11 @@ function buildInterface(app) {
   mainWindow.setReleasedWhenClosed(false);
   var content = objc(mainWindow.contentView);
   var stepColor = rgb(0.08, 0.27, 0.48);
+  var statusColor = rgb(0.07, 0.34, 0.72);
 
   function addText(text, h, gap, size, bold, color, selectable) {
     var y = row(h, gap);
-    var label = makeWrappingLabel(text, margin, y, inner, h, size);
+    var label = makeWrappingLabel(text, contentX, y, contentW, h, size);
     if (bold) label.setFont($.NSFont.boldSystemFontOfSize(size));
     if (color) {
       try { label.setTextColor(color); } catch (eColor) {}
@@ -1721,7 +2187,7 @@ function buildInterface(app) {
   var githubY = row(githubH, githubGap);
   releasesButton = makeButton(
     OPEN_GITHUB_TITLE,
-    margin + inner - githubW,
+    boxX + boxW - githubW,
     githubY,
     githubW,
     githubH,
@@ -1731,7 +2197,13 @@ function buildInterface(app) {
   content.addSubview(releasesButton);
   styleChromeButton(releasesButton);
 
-  addText(STEP1_TITLE, step1HeaderH, headerGap, 16, true, stepColor, false);
+  beginSection();
+  addText(STATUS_TITLE, statusTitleH, 4, 15, true, statusColor, false);
+  statusField = addText('', statusBodyH, 0, 12, false, null, false);
+  endSection(0.90, 0.95, 0.99, 0.32, 0.50, 0.70);
+
+  beginSection();
+  step1TitleLabel = addText(STEP1_TITLE, step1HeaderH, headerGap, 16, true, stepColor, false);
   var step1HelpLabel = addText(STEP1_HELP, step1HelpH, helpGap, 12, false, null, false);
   try { step1HelpLabel.setTextColor(secondaryTextColor()); } catch (eHelp1) {}
 
@@ -1739,10 +2211,10 @@ function buildInterface(app) {
   var pathChooseW = 148;
   var pathGap = 8;
   function placePathRow(fieldValue, y, openAction, chooseAction) {
-    var fieldW = inner - pathOpenW - pathChooseW - pathGap * 2;
-    var field = makeField(fieldValue, margin, y + 2, fieldW, 26);
-    var openButton = makeButton('打开 / Open', margin + fieldW + pathGap, y, pathOpenW, 30, openAction);
-    var chooseButton = makeButton('选择… / Choose…', margin + fieldW + pathGap + pathOpenW + pathGap, y, pathChooseW, 30, chooseAction);
+    var fieldW = contentW - pathOpenW - pathChooseW - pathGap * 2;
+    var field = makeField(fieldValue, contentX, y + 2, fieldW, 26);
+    var openButton = makeButton('打开 / Open', contentX + fieldW + pathGap, y, pathOpenW, 30, openAction);
+    var chooseButton = makeButton('选择… / Choose…', contentX + fieldW + pathGap + pathOpenW + pathGap, y, pathChooseW, 30, chooseAction);
     content.addSubview(field);
     content.addSubview(openButton);
     content.addSubview(chooseButton);
@@ -1781,9 +2253,11 @@ function buildInterface(app) {
   destField = destRow.field;
   openDestButton = destRow.openButton;
   chooseDestButton = destRow.chooseButton;
+  try { sourceField.setDelegate(controller); } catch (eSourceDelegate) {}
+  try { destField.setDelegate(controller); } catch (eDestDelegate) {}
 
-  var prepareX = margin + Math.round((inner - prepareW) / 2);
-  var prepareY = row(prepareH, sectionGap);
+  var prepareX = contentX + Math.round((contentW - prepareW) / 2);
+  var prepareY = row(prepareH, 0);
   var primary = makePrimaryButton(
     PREPARE_BUTTON_TITLE,
     prepareX, prepareY, prepareW, prepareH, 'prepare:'
@@ -1793,36 +2267,40 @@ function buildInterface(app) {
   if (prepareFill) content.addSubview(prepareFill);
   content.addSubview(prepareButton);
   paintPrepareButton(true);
+  endSection(0.985, 0.99, 0.995, 0.45, 0.55, 0.68);
 
-  addText(STEP2_TITLE, step2HeaderH, headerGap, 16, true, stepColor, false);
+  beginSection();
+  step2TitleLabel = addText(STEP2_TITLE, step2HeaderH, headerGap, 16, true, stepColor, false);
   var explain = addText(explainText, explainH, explainGap, 11, false, null, true);
   try { explain.setFont($.NSFont.systemFontOfSize(11)); } catch (eExplainFont) {}
   var configBtnGap = 8;
-  var configBtnW = Math.floor((inner - configBtnGap) / 2);
+  var configBtnW = Math.floor((contentW - configBtnGap) / 2);
   var openConfigY = row(configBtnH, configBtnGapY);
   openOriginalConfigButton = makeButton(
     '打开原版配置位置 / Open original config folder',
-    margin, openConfigY, configBtnW, configBtnH, 'openOriginalConfig:', 12
+    contentX, openConfigY, configBtnW, configBtnH, 'openOriginalConfig:', 12
   );
   openCoopConfigButton = makeButton(
     '打开联机副本配置位置 / Open co-op config folder',
-    margin + configBtnW + configBtnGap, openConfigY, configBtnW, configBtnH, 'openCoopConfig:', 12
+    contentX + configBtnW + configBtnGap, openConfigY, configBtnW, configBtnH, 'openCoopConfig:', 12
   );
-  var syncConfigY = row(configBtnH, sectionGap);
+  var syncConfigY = row(configBtnH, 0);
   syncToCoopButton = makeButton(
     SYNC_TO_COOP_TITLE,
-    margin, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 11
+    contentX, syncConfigY, configBtnW, configBtnH, 'syncOriginalToCoop:', 11
   );
   syncToOriginalButton = makeButton(
     SYNC_TO_ORIGINAL_TITLE,
-    margin + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 11
+    contentX + configBtnW + configBtnGap, syncConfigY, configBtnW, configBtnH, 'syncCoopToOriginal:', 11
   );
   content.addSubview(openOriginalConfigButton);
   content.addSubview(openCoopConfigButton);
   content.addSubview(syncToCoopButton);
   content.addSubview(syncToOriginalButton);
+  endSection(0.985, 0.99, 0.995, 0.45, 0.55, 0.68);
 
-  addText(STEP3_TITLE, step3HeaderH, headerGap, 16, true, stepColor, false);
+  beginSection();
+  step3TitleLabel = addText(STEP3_TITLE, step3HeaderH, headerGap, 16, true, stepColor, false);
   var step3HelpLabel = addText(STEP3_HELP, step3HelpH, helpGap, 12, false, null, false);
   try { step3HelpLabel.setTextColor(secondaryTextColor()); } catch (eHelp3) {}
 
@@ -1831,31 +2309,33 @@ function buildInterface(app) {
   var modsClearW = 108;
   var modsGap = 8;
   var modsRowY = row(pathRowH, fieldGap);
-  var modsFieldW = inner - modsOpenW - modsChooseW - modsClearW - modsGap * 3;
-  modsField = makeField('', margin, modsRowY + 2, modsFieldW, 26);
+  var modsFieldW = contentW - modsOpenW - modsChooseW - modsClearW - modsGap * 3;
+  modsField = makeField('', contentX, modsRowY + 2, modsFieldW, 26);
   try { modsField.setPlaceholderString($(MODS_PLACEHOLDER)); } catch (eMods) {}
-  openModsButton = makeButton('打开 / Open', margin + modsFieldW + modsGap, modsRowY, modsOpenW, 30, 'openMods:');
-  chooseModsButton = makeButton('选择… / Choose…', margin + modsFieldW + modsGap + modsOpenW + modsGap, modsRowY, modsChooseW, 30, 'chooseMods:');
-  clearModsButton = makeButton('清除 / Clear', margin + modsFieldW + modsGap + modsOpenW + modsGap + modsChooseW + modsGap, modsRowY, modsClearW, 30, 'clearMods:');
+  openModsButton = makeButton('打开 / Open', contentX + modsFieldW + modsGap, modsRowY, modsOpenW, 30, 'openMods:');
+  chooseModsButton = makeButton('选择… / Choose…', contentX + modsFieldW + modsGap + modsOpenW + modsGap, modsRowY, modsChooseW, 30, 'chooseMods:');
+  clearModsButton = makeButton('清除 / Clear', contentX + modsFieldW + modsGap + modsOpenW + modsGap + modsChooseW + modsGap, modsRowY, modsClearW, 30, 'clearMods:');
   content.addSubview(modsField);
   content.addSubview(openModsButton);
   content.addSubview(chooseModsButton);
   content.addSubview(clearModsButton);
 
-  var downloadY = row(downloadH, sectionGap);
-  downloadButton = makeButton(DOWNLOAD_MOD_TITLE, margin, downloadY, inner, downloadH, 'downloadMod:', 12);
+  var downloadY = row(downloadH, 0);
+  downloadButton = makeButton(DOWNLOAD_MOD_TITLE, contentX, downloadY, contentW, downloadH, 'downloadMod:', 13);
   content.addSubview(downloadButton);
   styleDownloadButton(downloadButton);
+  endSection(0.985, 0.99, 0.995, 0.45, 0.55, 0.68);
 
-  statusField = addText('', statusH, statusGap, 12, false, null, false);
-  addText('进度 / Progress', progressH, progressGap, 13, false, null, false);
+  var progressY = row(progressH, progressGap);
+  var progress = makeWrappingLabel('进度 / Progress', boxX, progressY, boxW, progressH, 13);
+  content.addSubview(progress);
 
   var logY = row(logH, 0);
-  var scroll = objc($.NSScrollView.alloc).initWithFrame($.NSMakeRect(margin, logY, inner, logH));
+  var scroll = objc($.NSScrollView.alloc).initWithFrame($.NSMakeRect(boxX, logY, boxW, logH));
   scroll.setHasVerticalScroller(true);
   scroll.setAutohidesScrollers(true);
   scroll.setBorderType(1);
-  logView = objc($.NSTextView.alloc).initWithFrame($.NSMakeRect(0, 0, inner - 20, logH));
+  logView = objc($.NSTextView.alloc).initWithFrame($.NSMakeRect(0, 0, boxW - 20, logH));
   logView.setEditable(false);
   logView.setSelectable(true);
   logView.setRichText(false);
@@ -1865,24 +2345,20 @@ function buildInterface(app) {
   try {
     var container = objc(logView.textContainer);
     container.setWidthTracksTextView(true);
-    container.setContainerSize($.NSMakeSize(inner - 16, 1000000));
+    container.setContainerSize($.NSMakeSize(boxW - 16, 1000000));
   } catch (e2) {}
   scroll.setDocumentView(logView);
   styleLogPanel(scroll, logView);
   content.addSubview(scroll);
 
-  if (fileExists('/Applications/Duckov.app')) {
-    setStatus('已找到默认原版 App。确认路径后点击第一步的「准备联机副本」。 / Default original app found. Confirm the paths, then click Prepare co-op copy in Step 1.', null);
-  } else {
-    setStatus('未找到默认原版 App。请点「选择…」指定 Duckov.app。 / Default original app was not found. Click Choose and select Duckov.app.', null);
-  }
+  detectExistingProgress();
+  refreshGuide();
   replaceLog(introText());
   objc(mainWindow.center);
   mainWindow.makeKeyAndOrderFront(app);
   app.activateIgnoringOtherApps(true);
   paintPrepareButton(true);
 }
-
 function startApp() {
   var env = runtimeEnv();
   resources = env.DUCKOV_COOP_PREPARE_RESOURCES || '';
