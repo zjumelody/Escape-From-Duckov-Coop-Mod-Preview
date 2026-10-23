@@ -1038,6 +1038,47 @@ function secondaryTextColor() {
   return rgb(0.35, 0.35, 0.35);
 }
 
+// AppKit 的 NSTextAlignmentRight 在 arm64 上是 2，在 x86_64 上是 1。
+// 写死 2 会在 Apple Silicon 上把标题排到按钮右侧并裁掉开头。
+// 这里按名字取 NSTextAlignmentCenter，用当前进程里的正确数值。
+// NSTextAlignmentRight is 2 on arm64 and 1 on x86_64.
+// A literal 2 pins the title to the right edge on Apple Silicon and clips it.
+// Resolve NSTextAlignmentCenter by name so this process gets the correct value.
+function appKitTextAlignment(which) {
+  var keys = {
+    left: 'NSTextAlignmentLeft',
+    center: 'NSTextAlignmentCenter',
+    right: 'NSTextAlignmentRight'
+  };
+  var raw = null;
+  try { raw = $[keys[which] || keys.left]; } catch (e) { raw = null; }
+  if (typeof raw === 'number' && !isNaN(raw)) return raw;
+  if (raw != null && typeof raw !== 'function') {
+    var n = Number(raw);
+    if (!isNaN(n)) return n;
+  }
+  var right = null;
+  try { right = $.NSTextAlignmentRight; } catch (e2) { right = null; }
+  var rightNum = typeof right === 'number' ? right : Number(right);
+  if (isNaN(rightNum)) rightNum = 2;
+  var centerNum = rightNum === 1 ? 2 : 1;
+  if (which === 'center') return centerNum;
+  if (which === 'right') return rightNum === 1 ? 1 : 2;
+  return 0;
+}
+
+function imagePositionNone() {
+  try {
+    var raw = $.NSNoImage;
+    if (typeof raw === 'number' && !isNaN(raw)) return raw;
+    if (raw != null && typeof raw !== 'function') {
+      var n = Number(raw);
+      if (!isNaN(n)) return n;
+    }
+  } catch (e) {}
+  return 0;
+}
+
 function attributedTitle(title, font, color, underline, align) {
   var text = String(title);
   var str = objc($.NSMutableAttributedString.alloc).initWithString($(text));
@@ -1049,6 +1090,11 @@ function attributedTitle(title, font, color, underline, align) {
   if (align != null) {
     var style = objc(objc($.NSMutableParagraphStyle.alloc).init);
     style.setAlignment(align);
+    try {
+      var mode = $.NSLineBreakByTruncatingTail;
+      if (typeof mode !== 'number') mode = 4;
+      style.setLineBreakMode(mode);
+    } catch (eBreak) {}
     str.addAttributeValueRange($.NSParagraphStyleAttributeName, style, range);
   }
   return str;
@@ -1068,8 +1114,37 @@ function paintLayer(view, r, g, b, radius) {
   }
 }
 
+var PREPARE_BUTTON_TITLE = '准备联机副本 / Prepare co-op copy';
+var PREPARE_TITLE_SIZE = 14;
+
+function stylePrimaryTitle(button) {
+  if (!button) return;
+  var center = appKitTextAlignment('center');
+  var noImage = imagePositionNone();
+  try { button.setAlignment(center); } catch (e1) {}
+  try { button.setImagePosition(noImage); } catch (e2) {}
+  try {
+    var cell = objc(button.cell);
+    cell.setAlignment(center);
+    cell.setImagePosition(noImage);
+  } catch (e3) {}
+  try {
+    // 段落对齐必须是 Center 这个名字对应的值。按钮 cell 的 setAlignment
+    // 会被 attributedTitle 盖掉；写死 2 在 arm64 上是右对齐。
+    // Paragraph alignment has to be the named center value. The cell's
+    // setAlignment is ignored once an attributed title is set, and a literal
+    // 2 is right alignment on arm64.
+    button.setAttributedTitle(attributedTitle(
+      PREPARE_BUTTON_TITLE,
+      $.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE),
+      $.NSColor.whiteColor,
+      false,
+      center
+    ));
+  } catch (e4) {}
+}
+
 function paintPrepareButton(enabled) {
-  var title = '准备联机副本 / Prepare co-op copy';
   var r = enabled ? 0.10 : 0.45;
   var g = enabled ? 0.38 : 0.49;
   var b = enabled ? 0.78 : 0.54;
@@ -1077,10 +1152,8 @@ function paintPrepareButton(enabled) {
     try { prepareFill.setFillColor(rgb(r, g, b)); } catch (e) {}
   }
   if (!prepareButton) return;
-  paintLayer(prepareButton, r, g, b, 8);
-  try {
-    prepareButton.setAttributedTitle(attributedTitle(title, $.NSFont.boldSystemFontOfSize(16), $.NSColor.whiteColor, false, 2));
-  } catch (e2) {}
+  paintLayer(prepareButton, r, g, b, 6);
+  stylePrimaryTitle(prepareButton);
 }
 
 function makeLabel(text, x, y, w, h, size, bold) {
@@ -1127,29 +1200,6 @@ function makeButton(title, x, y, w, h, action, fontSize) {
   return button;
 }
 
-function makeLinkButton(title, x, y, w, h, action) {
-  var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
-  button.setBezelStyle(15);
-  button.setBordered(false);
-  button.setFont($.NSFont.systemFontOfSize(12));
-  button.setAlignment(0);
-  button.setTarget(controller);
-  button.setAction(action);
-  try { button.setFocusRingType(1); } catch (e) {}
-  var color = rgb(0.05, 0.38, 0.82);
-  try {
-    var link = objc($.NSColor.linkColor);
-    if (link) color = link;
-  } catch (e2) {}
-  try {
-    button.setAttributedTitle(attributedTitle(title, $.NSFont.systemFontOfSize(12), color, true, 0));
-  } catch (e3) {
-    button.setTitle($(title));
-    try { button.setContentTintColor(color); } catch (e4) {}
-  }
-  return button;
-}
-
 function makeSectionBox(title, x, y, w, h) {
   var box = objc($.NSBox.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
   box.setTitle($(title));
@@ -1181,7 +1231,7 @@ function makePrimaryButton(title, x, y, w, h, action) {
     fill.setBoxType(4);
     fill.setBorderType(0);
     fill.setBorderWidth(0);
-    fill.setCornerRadius(8);
+    fill.setCornerRadius(6);
     fill.setFillColor(rgb(0.10, 0.38, 0.78));
     fill.setTransparent(false);
   } catch (e) {
@@ -1189,9 +1239,8 @@ function makePrimaryButton(title, x, y, w, h, action) {
   }
   var button = objc($.NSButton.alloc).initWithFrame($.NSMakeRect(x, y, w, h));
   button.setTitle($(title));
-  button.setFont($.NSFont.boldSystemFontOfSize(16));
+  button.setFont($.NSFont.boldSystemFontOfSize(PREPARE_TITLE_SIZE));
   button.setBordered(false);
-  button.setAlignment(2);
   button.setTarget(controller);
   button.setAction(action);
   try { button.setKeyEquivalent($('\r')); } catch (e2) {}
@@ -1201,9 +1250,7 @@ function makePrimaryButton(title, x, y, w, h, action) {
     cell.setBordered(false);
     cell.setBackgroundColor(objc($.NSColor.clearColor));
   } catch (e4) {}
-  try {
-    button.setAttributedTitle(attributedTitle(title, $.NSFont.boldSystemFontOfSize(16), $.NSColor.whiteColor, false, 2));
-  } catch (e5) {}
+  stylePrimaryTitle(button);
   try { button.setBezelColor(rgb(0.10, 0.38, 0.78)); } catch (e6) {}
   return { fill: fill, button: button };
 }
@@ -1291,20 +1338,60 @@ function registerController() {
 
 function buildInterface(app) {
   var windowWidth = 780;
-  var configExplainH = 158;
-  var configBtnH = 30;
-  var configTitleChrome = 26;
-  var configAfterTitle = 8;
-  var configGapA = 8;
-  var configGapB = 8;
-  var configPadBottom = 12;
-  var configBoxH = configTitleChrome + configAfterTitle + configExplainH + configGapA + configBtnH + configGapB + configBtnH + configPadBottom;
-  var configSectionGap = 8;
-  // The config section is inserted into the existing flow. Grow by that height so the log and the Prepare button stay put.
-  var windowHeight = 768 + configBoxH + configSectionGap;
   var margin = 20;
   var inner = windowWidth - margin * 2;
-  var cursor = 12;
+  var topInset = 12;
+  var headerH = 32;
+  var headerGap = 4;
+  var introH = 50;
+  var introGap = 6;
+  var captionZhH = 22;
+  var captionZhGap = 2;
+  var captionEnH = 18;
+  var captionEnGap = 4;
+  var pathRowH = 30;
+  var pathRowGap = 6;
+  var modsTitleChrome = 22;
+  var modsAfterTitle = 4;
+  var modsLabelH = 18;
+  var modsGap1 = 4;
+  var modsRowH = 30;
+  var modsGap2 = 6;
+  var downloadH = 30;
+  var modsPadBottom = 8;
+  var modsBoxH = modsTitleChrome + modsAfterTitle + modsLabelH + modsGap1 + modsRowH + modsGap2 + downloadH + modsPadBottom;
+  var modsBoxGap = 6;
+  var configTitleChrome = 22;
+  var configAfterTitle = 4;
+  var configExplainH = 144;
+  var configGapA = 6;
+  var configBtnH = 30;
+  var configGapB = 6;
+  var configPadBottom = 8;
+  var configBoxH = configTitleChrome + configAfterTitle + configExplainH + configGapA + configBtnH + configGapB + configBtnH + configPadBottom;
+  var configSectionGap = 6;
+  var statusH = 36;
+  var statusGap = 4;
+  var progressH = 18;
+  var progressGap = 4;
+  var prepareH = 32;
+  var prepareW = 380;
+  var prepareGap = 10;
+  var prepareBottom = 14;
+  var logH = 204;
+  var pathBlock = captionZhH + captionZhGap + captionEnH + captionEnGap + pathRowH + pathRowGap;
+  // 高度跟着内容走。方框和路径行收紧时窗口变矮，日志高度保持不变。
+  // Height follows the sections. Tighter boxes and path rows shorten the window; the log stays the same height.
+  var aboveLog = topInset
+    + headerH + headerGap
+    + introH + introGap
+    + pathBlock * 2
+    + modsBoxH + modsBoxGap
+    + configBoxH + configSectionGap
+    + statusH + statusGap
+    + progressH + progressGap;
+  var windowHeight = aboveLog + logH + prepareGap + prepareH + prepareBottom;
+  var cursor = topInset;
   function row(h, gap) {
     var y = windowHeight - cursor - h;
     cursor += h + gap;
@@ -1322,10 +1409,27 @@ function buildInterface(app) {
   mainWindow.setReleasedWhenClosed(false);
   var content = objc(mainWindow.contentView);
 
-  content.addSubview(makeLabel('准备联机副本 / Prepare co-op copy', margin, row(26, 4), inner, 26, 18, true));
+  var headerY = row(headerH, headerGap);
+  var releasesW = 304;
+  var releasesH = 28;
+  var titleW = inner - releasesW - 16;
+  content.addSubview(makeLabel(
+    '准备联机副本 / Prepare co-op copy',
+    margin, headerY + 3, titleW, 26, 18, true
+  ));
+  releasesButton = makeButton(
+    '打开 Releases 页面 / Open Releases',
+    margin + inner - releasesW,
+    headerY + Math.round((headerH - releasesH) / 2),
+    releasesW,
+    releasesH,
+    'openReleases:',
+    13
+  );
+  content.addSubview(releasesButton);
   content.addSubview(makeWrappingLabel(
     '复制官方 Duckov.app，只改副本：关闭 App Sandbox，加入联网权限，并用本机 codesign 身份 "-" 重新签名。\nCopy the official Duckov.app and change only the copy: turn off App Sandbox, add network access, and re-sign with the local codesign identity "-".',
-    margin, row(50, 8), inner, 50, 12
+    margin, row(introH, introGap), inner, introH, 12
   ));
 
   var pathOpenW = 108;
@@ -1342,8 +1446,17 @@ function buildInterface(app) {
     return { field: field, openButton: openButton, chooseButton: chooseButton };
   }
 
-  content.addSubview(makeLabel('原版 App / Original app', margin, row(18, 4), inner, 18, 13, false));
-  var sourceY = row(30, 10);
+  content.addSubview(makeLabel(
+    '指定原版游戏 App 的位置（现有已经安装的游戏位置可在 steam 里查看）',
+    margin, row(captionZhH, captionZhGap), inner, captionZhH, 13, true
+  ));
+  var sourceEnglish = makeLabel(
+    'Pick the installed Duckov.app. Steam can show the install path.',
+    margin, row(captionEnH, captionEnGap), inner, captionEnH, 12, false
+  );
+  try { sourceEnglish.setTextColor(secondaryTextColor()); } catch (eSource) {}
+  content.addSubview(sourceEnglish);
+  var sourceY = row(pathRowH, pathRowGap);
   var sourceRow = placePathRow('/Applications/Duckov.app', sourceY, 'openSource:', 'chooseSource:');
   sourceField = sourceRow.field;
   openSourceButton = sourceRow.openButton;
@@ -1351,36 +1464,28 @@ function buildInterface(app) {
 
   content.addSubview(makeLabel(
     '指定要保存游戏副本的位置（今后要联机则打开这个副本游戏）',
-    margin, row(22, 4), inner, 22, 13, true
+    margin, row(captionZhH, captionZhGap), inner, captionZhH, 13, true
   ));
   var destEnglish = makeLabel(
     'Where the co-op copy is saved. Launch this copy for co-op.',
-    margin, row(18, 4), inner, 18, 12, false
+    margin, row(captionEnH, captionEnGap), inner, captionEnH, 12, false
   );
   try { destEnglish.setTextColor(secondaryTextColor()); } catch (e) {}
   content.addSubview(destEnglish);
-  var destY = row(30, 10);
+  var destY = row(pathRowH, pathRowGap);
   var destRow = placePathRow(joinPath(homeDir(), 'Applications/Duckov-COOP.app'), destY, 'openDest:', 'chooseDest:');
   destField = destRow.field;
   openDestButton = destRow.openButton;
   chooseDestButton = destRow.chooseButton;
 
-  var titleChrome = 26;
-  var afterTitle = 8;
-  var modsLabelH = 18;
-  var modsGap1 = 6;
-  var modsRowH = 30;
-  var modsGap2 = 10;
-  var downloadH = 32;
-  var boxPadBottom = 10;
-  var boxH = titleChrome + afterTitle + modsLabelH + modsGap1 + modsRowH + modsGap2 + downloadH + boxPadBottom;
+  var boxH = modsBoxH;
   var boxY = windowHeight - cursor - boxH;
   var modsBox = makeSectionBox('可选：Mods 区域 / Optional Mods', margin, boxY, inner, boxH);
   content.addSubview(modsBox);
   function yInBox(topOffset, h) {
     return boxY + boxH - topOffset - h;
   }
-  var modsLabelTop = titleChrome + afterTitle;
+  var modsLabelTop = modsTitleChrome + modsAfterTitle;
   var modsLabelY = yInBox(modsLabelTop, modsLabelH);
   var modsRowY = yInBox(modsLabelTop + modsLabelH + modsGap1, modsRowH);
   var downloadY = yInBox(modsLabelTop + modsLabelH + modsGap1 + modsRowH + modsGap2, downloadH);
@@ -1412,7 +1517,7 @@ function buildInterface(app) {
   content.addSubview(chooseModsButton);
   content.addSubview(clearModsButton);
   content.addSubview(downloadButton);
-  cursor += boxH + 4;
+  cursor += boxH + modsBoxGap;
 
   var configBoxY = windowHeight - cursor - configBoxH;
   var configBox = makeSectionBox('可选：配置与存档 / Optional: config and saves', margin, configBoxY, inner, configBoxH);
@@ -1454,22 +1559,11 @@ function buildInterface(app) {
   content.addSubview(syncToOriginalButton);
   cursor += configBoxH + configSectionGap;
 
-  var linkW = 340;
-  var linkY = row(24, 6);
-  releasesButton = makeLinkButton(
-    '打开 Releases 页面 / Open Releases',
-    margin + 2, linkY, linkW, 24, 'openReleases:'
-  );
-  content.addSubview(releasesButton);
-
-  statusField = makeWrappingLabel('', margin, row(36, 4), inner, 36, 12);
+  statusField = makeWrappingLabel('', margin, row(statusH, statusGap), inner, statusH, 12);
   content.addSubview(statusField);
-  content.addSubview(makeLabel('进度 / Progress', margin, row(18, 4), inner, 18, 13, false));
+  content.addSubview(makeLabel('进度 / Progress', margin, row(progressH, progressGap), inner, progressH, 13, false));
 
-  var prepareH = 50;
-  var prepareGap = 12;
-  var prepareBottom = 16;
-  var logH = windowHeight - cursor - prepareBottom - prepareH - prepareGap;
+  logH = windowHeight - cursor - prepareBottom - prepareH - prepareGap;
   var logY = prepareBottom + prepareH + prepareGap;
   var scroll = objc($.NSScrollView.alloc).initWithFrame($.NSMakeRect(margin, logY, inner, logH));
   scroll.setHasVerticalScroller(true);
@@ -1490,9 +1584,10 @@ function buildInterface(app) {
   scroll.setDocumentView(logView);
   content.addSubview(scroll);
 
+  var prepareX = margin + Math.round((inner - prepareW) / 2);
   var primary = makePrimaryButton(
-    '准备联机副本 / Prepare co-op copy',
-    margin, prepareBottom, inner, prepareH, 'prepare:'
+    PREPARE_BUTTON_TITLE,
+    prepareX, prepareBottom, prepareW, prepareH, 'prepare:'
   );
   prepareFill = primary.fill;
   prepareButton = primary.button;

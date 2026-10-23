@@ -21,7 +21,7 @@ The official / Steam `Duckov.app` uses App Sandbox and does not include the netw
 
 In the window:
 
-1. Confirm the original app. The default is `/Applications/Duckov.app`. If the game is somewhere else, click Choose.
+1. Confirm the original app. The default is `/Applications/Duckov.app`. Pick the installed Duckov.app; Steam can show the install path. If the game is somewhere else, click Choose.
 2. Confirm where the co-op copy is saved (launch this copy for co-op). The default is `Applications/Duckov-COOP.app` inside your home folder (`~/Applications/Duckov-COOP.app`).
 3. To include the co-op mod, do one of these:
    - Click **Download latest test mod** and wait until the Mods path fills in; or
@@ -45,7 +45,7 @@ What the buttons do:
 
 The original app keeps App Sandbox, so its config is `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov` (Location 1, original sandbox config). The co-op copy has App Sandbox off, so its config is `~/Library/Application Support/com.bilibili.duckov` (Location 2, co-op config). The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. Files that exist only in the destination are deleted. If reading Location 1 prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access, then try again.
 
-Progress scrolls in the text area in the lower part of the window. Mods, and config and saves, each sit in a section marked optional. Prepare co-op copy stays the large button at the bottom. Open Releases is a small link beside those sections. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
+Progress scrolls in the text area in the lower part of the window. Mods, and config and saves, each sit in a section marked optional. Prepare co-op copy is a centered blue button at the bottom. Open Releases is a gray button at the top-right of the window. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
 
 ### Advanced: Terminal script
 
