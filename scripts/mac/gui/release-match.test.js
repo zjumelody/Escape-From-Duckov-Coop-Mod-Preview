@@ -84,6 +84,17 @@ assert.strictEqual(
 );
 assert.strictEqual(matcher.safeReleaseDownloadUrl('https://example.com/EscapeFromDuckovCoopMod.zip'), false);
 assert.strictEqual(
+  matcher.releaseAssetVersionLabel('EscapeFromDuckovCoopMod.V1.4.2-test.zip', 'v1.4.2-test'),
+  '1.4.2-test'
+);
+assert.strictEqual(
+  matcher.releaseAssetVersionLabel('EscapeFromDuckovCoopMod.V1.4.2.zip', 'v1.4.2'),
+  '1.4.2'
+);
+assert.strictEqual(matcher.releaseAssetVersionLabel('EscapeFromDuckovCoopMod.zip', 'v1.4.1'), '1.4.1');
+assert.strictEqual(matcher.releaseAssetVersionLabel('notes.txt', ''), '');
+assert.strictEqual(matcher.releaseAssetVersionLabel('', 'nope'), '');
+assert.strictEqual(
   matcher.safeReleaseDownloadUrl(matcher.RELEASE_DOWNLOAD_PREFIX + 'v/bad name.zip'),
   false
 );

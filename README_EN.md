@@ -19,14 +19,14 @@ The official / Steam `Duckov.app` uses App Sandbox and does not include the netw
 2. Download **`DuckovCoopPrepare-mac.zip`** from the asset list, unzip it, and double-click **`DuckovCoopPrepare.app`**. Use that asset. The Source code archive further down the page is the repository.
 3. The first time you open it, macOS may say the developer cannot be verified. Control-click the app, choose Open, then choose Open again. If Open is not offered, use System Settings → Privacy & Security → Open Anyway. After that, a normal double-click is enough. An Apple Developer account is not required.
 
-The window title is 《逃离鸭科夫》Mac 联机 Mod 支持工具 (Escape from Duckov — Mac co-op Mod support tool). The content is three steps, top to bottom. **Open GitHub** at the top-right is not a step: it opens this fork's Releases in the browser. The button is light green, distinct from the gray secondary buttons and from the blue Prepare button.
+The window title is 《逃离鸭科夫》Mac 联机 Mod 支持工具 (Escape from Duckov — Mac co-op Mod support tool). **Open GitHub** at the top-right is not a step: it opens this fork's Releases in the browser. The button is light green, distinct from the gray secondary buttons and from the blue Prepare button. Below it is a bordered panel titled **当前状态： / Current status:** in blue. The text there says what to do next. The three steps follow, each inside its own bordered box. A finished step's title turns green and gains a ✅.
 
 **Step 1: Prepare co-op copy**
 
 1. Confirm the original app. The default is `/Applications/Duckov.app`. Pick the installed Duckov.app; Steam can show the install path. If the game is somewhere else, click Choose.
 2. Confirm where the co-op copy is saved (launch this copy for co-op). The default is `Applications/Duckov-COOP.app` inside your home folder (`~/Applications/Duckov-COOP.app`).
 3. Click the blue **Prepare co-op copy** button in this step. If the copy already exists, the helper asks before replacing it. Mods already inside the copy are kept. A Mod path filled in at Step 3 is installed during prepare. Copying the whole game can take several minutes; leave the window open.
-4. When you see **Done**, you can click **Sync now** to mirror the original config folder onto the co-op config folder, or click **Don't sync** or **OK** to skip that. Then **launch only** `Duckov-COOP.app` for co-op.
+4. After prepare succeeds, the dialog title asks whether to continue with Step 2: sync the original config (including saves) to the copy. Click **Sync now**, or **Don't sync**. Then **launch only** `Duckov-COOP.app` for co-op.
 
 **Step 2: Sync config files**
 
@@ -34,12 +34,14 @@ Open the original config folder or the co-op config folder, or mirror them eithe
 
 **Step 3: Configure (Mac-compatible) co-op Mod**
 
-If you already downloaded the latest Mac-compatible co-op Mod, click Choose and pick that folder. It updates into the copy's `Contents/Mods/`. If you have not downloaded it, click **Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder**. When the copy already exists, the Mod is installed and the copy is signed again. When the copy does not exist yet, the path is saved and Step 1 installs it. Each outermost folder that contains a `.dll` is copied whole. Clear only clears the path; Mods already in the copy stay there.
+If you already downloaded the latest Mac-compatible co-op Mod, click Choose and pick that folder. It updates into the copy's `Contents/Mods/`. If you have not downloaded it, click **Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder**. That button is about 1.5× taller so the two-line title stays readable. If the copy or the chosen folder already has that same Release version, the download is skipped and the window says so. Otherwise, when the copy already exists, the Mod is installed and the copy is signed again. When the copy does not exist yet, the path is saved and Step 1 installs it. Each outermost folder that contains a `.dll` is copied whole. Clear only clears the path; Mods already in the copy stay there.
+
+When this co-op Mod is installed or updated, older folders of the same mod in the copy are replaced so two copies are not left side by side. That includes workshop folder `3591341282`, folders named `EscapeFromDuckovCoopMod` or `Escape-From-Duckov-Coop`, and any folder identified by `info.ini` or the main DLL. Other mods, such as a backpack expansion, are not deleted. The original app is not modified.
 
 What the buttons do:
 
 - **Prepare co-op copy**: copies the original app, turns off App Sandbox, adds `network.client` and `network.server`, and re-signs the copy with the local `codesign` identity `-`. If Step 3 has a path, outermost folders that contain a `.dll` are installed into the copy's `Contents/Mods/` before signing.
-- **Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder**: downloads the newest `EscapeFromDuckovCoopMod*.zip` from this fork's Releases (including pre-releases) and unzips it. If the copy already exists, that Mod is then installed into the copy's `Contents/Mods/` and the copy is signed again. If the copy does not exist yet, the path is saved and Step 1 installs it.
+- **Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder**: downloads the newest `EscapeFromDuckovCoopMod*.zip` from this fork's Releases (including pre-releases) and unzips it. The button is about 1.5× its previous height. If the copy or a chosen folder already has that same Release version, the download is skipped and the window explains why. When an install is needed, older folders of this same co-op Mod are removed from the copy first so only one remains, then the copy is signed again. If the copy does not exist yet, the path is saved and Step 1 installs it. Other mods are not deleted.
 - **Open GitHub**: opens this fork's Releases page in the browser. The button is light green.
 - **Choose**: pick the original app, the place to save the copy, or a Mac co-op Mod folder you already downloaded. Choosing a Mod folder updates the copy when the copy already exists.
 - **Clear**: clears the Step 3 path. It does not remove Mods already in the copy.
@@ -48,11 +50,11 @@ What the buttons do:
 - **Open co-op config folder**: opens the co-op config folder. The helper creates that folder when it is missing.
 - **(sync files) original → co-op**: mirrors the original config folder onto the co-op config folder.
 - **(sync files) co-op → original**: mirrors the co-op config folder onto the original config folder.
-- **Done dialog**: after a successful prepare, the helper asks whether to run that original → co-op sync now. **Sync now** starts it. **Don't sync** and **OK** dismiss the dialog without syncing.
+- **Done dialog**: after a successful prepare, the title asks whether to continue with Step 2 and sync the original config (including saves) to the copy. The only buttons are **Sync now** and **Don't sync**. Sync now is the original → co-op sync above.
 
 The original app keeps App Sandbox, so its config is `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov` (original config folder). The co-op copy has App Sandbox off, so its config is `~/Library/Application Support/com.bilibili.duckov` (co-op config folder). The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. Files that exist only in the destination are deleted. If reading the original config folder prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access, then try again.
 
-Progress scrolls in a lightly tinted text area at the bottom of the window. Prepare co-op copy is a centered blue button in Step 1. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`.
+Progress scrolls in a lightly tinted text area at the bottom of the window. Prepare co-op copy is a centered blue button in Step 1. Success and failure messages are in Chinese and English. Preparing a copy does not modify the original `Duckov.app`. Current status at the top updates as steps are finished.
 
 ### Advanced: Terminal script
 
@@ -91,7 +93,7 @@ When the copy already exists and you only want to update the Mac co-op Mod, skip
 ./prepare-duckov-coop-app.sh --update-mods --dest "$HOME/Applications/Duckov-COOP.app" --mods-dir /path/to/Mods
 ```
 
-If a Release zip (for example `EscapeFromDuckovCoopMod*.zip`) sits next to the script, the script installs it into the copy's `Contents/Mods/` before signing.
+If a Release zip (for example `EscapeFromDuckovCoopMod*.zip`) sits next to the script, the script installs it into the copy's `Contents/Mods/` before signing. Older folders of this same co-op Mod in the copy are replaced so only one remains; other mods stay.
 
 ### What the helper and the script do
 
