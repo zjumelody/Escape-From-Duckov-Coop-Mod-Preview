@@ -27,6 +27,7 @@ SOURCE="${SOURCE:-${DUCKOV_SOURCE:-/Applications/Duckov.app}}"
 DEST="${DEST:-${DUCKOV_DEST:-${HOME:-}/Applications/Duckov-COOP.app}}"
 MODS_DIR="${MODS_DIR:-${DUCKOV_MODS_DIR:-}}"
 FORCE="${FORCE:-0}"
+UPDATE_MODS="${UPDATE_MODS:-0}"
 INSTALLED_COUNT=0
 RESTORED_MODS=0
 USED_MODS_LABEL=""
@@ -37,6 +38,7 @@ usage() {
   cat <<'EOF'
 用法 / Usage:
   prepare-duckov-coop-app.sh [--source APP] [--dest APP] [--mods-dir DIR] [--force]
+  prepare-duckov-coop-app.sh --update-mods [--source APP] --dest APP --mods-dir DIR
 
 把官方 Duckov.app 复制到可写位置，只改副本的 entitlements，并用本机 codesign 身份 "-" 重新签名。
 Copy an official Duckov.app to a writable location, adjust entitlements on the copy only,
@@ -56,6 +58,12 @@ and re-sign that copy with the local codesign identity "-".
              Unzipped Mods directory (each folder that contains a .dll is copied into the copy's Contents/Mods/)
   --force    目标已存在时直接替换，不再询问
              Replace an existing destination without asking
+  --update-mods
+             不复制整份 App。把 --mods-dir 里的 Mac 联机 Mod 装进已经存在的副本 Contents/Mods/，
+             再用本机 codesign 身份 "-" 重新签名。原版不会被修改。
+             Do not copy the whole app. Install the Mac co-op Mod from --mods-dir into an existing
+             copy's Contents/Mods/, then re-sign that copy with the local codesign identity "-".
+             The original app is not modified.
   -h, --help 显示本说明 / Show this help
 
 环境变量（命令行优先）/ Environment (flags win):
@@ -75,6 +83,7 @@ next to the script (or in the current directory) is installed into the copy.
   ./prepare-duckov-coop-app.sh
   ./prepare-duckov-coop-app.sh --source "$HOME/Games/Duckov.app"
   ./prepare-duckov-coop-app.sh --mods-dir "$HOME/Downloads/Mods" --force
+  ./prepare-duckov-coop-app.sh --update-mods --dest "$HOME/Applications/Duckov-COOP.app" --mods-dir "$HOME/Downloads/Mods"
 
 只启动副本进行联机。不要把 Mods 放进原版 App。各方 ModVersion 必须完全一致。
 Launch only the copy for co-op. Do not put Mods in the original app.
@@ -397,6 +406,10 @@ parse_args() {
         MODS_DIR="${1#*=}"
         shift
         ;;
+      --update-mods)
+        UPDATE_MODS=1
+        shift
+        ;;
       *)
         die \
           "未知参数：${1}" \
@@ -474,8 +487,138 @@ validate_paths() {
   esac
 }
 
+sign_dest() {
+  local entitlements signed verified
+  entitlements="$(resolve_entitlements)"
+  note \
+    "正在用本机 codesign 身份 \"-\" 为副本签名（不使用 Apple 开发者证书）…" \
+    "Signing the copy with the local codesign identity \"-\" (no Apple Developer certificate)…"
+  signed=0
+  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
+    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
+      signed=1
+    fi
+  else
+    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST"; then
+      signed=1
+    fi
+  fi
+  if [[ "$signed" -ne 1 ]]; then
+    die \
+      "签名失败。原版未改动。可重新运行本脚本或准备工具。" \
+      "Signing failed. The original app was not modified. Run this script or the prepare helper again."
+  fi
+  verified=0
+  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
+    if codesign --verify "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
+      verified=1
+    fi
+  else
+    if codesign --verify "$DEST"; then
+      verified=1
+    fi
+  fi
+  if [[ "$verified" -ne 1 ]]; then
+    die \
+      "签名校验未通过。原版未改动。可重新运行本脚本。" \
+      "Signature check failed. The original app was not modified. You can run this script again."
+  fi
+}
+
+refuse_same_bundle() {
+  local source_phys dest_phys
+  SOURCE="$(abs_path "$SOURCE")"
+  DEST="$(abs_path "$DEST")"
+  if [[ "$SOURCE" == "$DEST" ]]; then
+    die \
+      "不会改写原版 App：${SOURCE}" \
+      "Refusing to modify the original app: ${SOURCE}"
+  fi
+  if [[ -d "$SOURCE" && -d "$DEST" ]]; then
+    source_phys="$(cd "$SOURCE" && pwd -P)" || source_phys="$SOURCE"
+    dest_phys="$(cd "$DEST" && pwd -P)" || dest_phys="$DEST"
+    if [[ "$source_phys" == "$dest_phys" ]]; then
+      die \
+        "不会改写原版 App：${SOURCE}" \
+        "Refusing to modify the original app: ${SOURCE}"
+    fi
+  fi
+  case "$DEST" in
+    "/"|"/Applications"|"${HOME:-}"|"/System"|"/usr")
+      die \
+        "拒绝危险的目标路径：${DEST}" \
+        "Refusing an unsafe destination: ${DEST}"
+      ;;
+  esac
+}
+
+update_mods_only() {
+  local chosen mods_root
+  require_macos
+  command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
+  command -v codesign >/dev/null 2>&1 || die \
+    "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
+    "codesign was not found. It ships with macOS; an Apple Developer account is not required."
+
+  TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/duckov-coop-mods.XXXXXX")"
+  DEST="$(abs_path "$DEST")"
+  if [[ -n "$MODS_DIR" ]]; then
+    MODS_DIR="$(abs_path "$MODS_DIR")"
+  fi
+  case "$DEST" in
+    *.app) ;;
+    *)
+      die \
+        "目标必须以 .app 结尾：${DEST}" \
+        "Destination must end with .app: ${DEST}"
+      ;;
+  esac
+  if [[ ! -d "$DEST" || ! -f "$DEST/Contents/Info.plist" ]]; then
+    die \
+      "副本还不存在，或不是 App：${DEST}" \
+      "请先准备联机副本，再更新 Mod。" \
+      "The co-op copy does not exist yet, or is not an app: ${DEST}" \
+      "Prepare the co-op copy before updating the Mod."
+  fi
+  refuse_same_bundle
+  if [[ -z "$MODS_DIR" || ! -d "$MODS_DIR" ]]; then
+    die \
+      "找不到 Mac 联机 Mod 目录：${MODS_DIR:-}" \
+      "Mac co-op Mod folder was not found: ${MODS_DIR:-}"
+  fi
+  mods_root="$(cd "$MODS_DIR" && pwd)"
+  chosen="$TMP_WORK/chosen-packages"
+  : >"$chosen"
+  prepare_package_list "$mods_root" "$chosen"
+  if [[ ! -s "$chosen" ]]; then
+    die \
+      "该目录里没有 .dll。请选择已解压的 Mac 联机 Mod：${MODS_DIR}" \
+      "No .dll files in that directory. Pick the unzipped Mac co-op Mod: ${MODS_DIR}"
+  fi
+  USED_MODS_LABEL="$MODS_DIR"
+  note \
+    "正在把 Mac 联机 Mod 装入副本的 Contents/Mods/（不改动原版，也不重拷整份游戏）。" \
+    "Installing the Mac co-op Mod into the copy's Contents/Mods/ (the original app is not modified, and the game is not copied again)." \
+    "副本 / Copy: ${DEST}" \
+    "Mod: ${MODS_DIR}"
+  install_packages "$chosen" "$mods_root" "$(basename "$mods_root")"
+  if command -v xattr >/dev/null 2>&1; then
+    xattr -dr com.apple.quarantine "$DEST/Contents/Mods" || true
+  fi
+  sign_dest
+  note \
+    "Mac 联机 Mod 已更新到副本。 / The Mac co-op Mod was updated into the copy." \
+    "副本 / Copy: ${DEST}" \
+    "本次已装入 ${INSTALLED_COUNT} 个 Mod 目录，来源：${USED_MODS_LABEL}" \
+    "Installed ${INSTALLED_COUNT} mod folder(s) from: ${USED_MODS_LABEL}"
+}
+
 main() {
-  local entitlements stash zip_path zip_root mods_root chosen fallback
+  local stash zip_path zip_root mods_root chosen fallback
+  if [[ "$UPDATE_MODS" -eq 1 ]]; then
+    update_mods_only
+    return 0
+  fi
   require_macos
   command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
   command -v codesign >/dev/null 2>&1 || die \
@@ -572,40 +715,7 @@ main() {
     xattr -dr com.apple.quarantine "$DEST" || true
   fi
 
-  entitlements="$(resolve_entitlements)"
-  note \
-    "正在用本机 codesign 身份 \"-\" 为副本签名（不使用 Apple 开发者证书）…" \
-    "Signing the copy with the local codesign identity \"-\" (no Apple Developer certificate)…"
-  signed=0
-  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
-    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
-      signed=1
-    fi
-  else
-    if codesign --force --deep --sign - --entitlements "$entitlements" "$DEST"; then
-      signed=1
-    fi
-  fi
-  if [[ "$signed" -ne 1 ]]; then
-    die \
-      "签名失败。原版未改动。可重新运行本脚本或准备工具。" \
-      "Signing failed. The original app was not modified. Run this script or the prepare helper again."
-  fi
-  verified=0
-  if [[ -n "${DUCKOV_GUI_LOG:-}" ]]; then
-    if codesign --verify "$DEST" >>"$DUCKOV_GUI_LOG" 2>&1; then
-      verified=1
-    fi
-  else
-    if codesign --verify "$DEST"; then
-      verified=1
-    fi
-  fi
-  if [[ "$verified" -ne 1 ]]; then
-    die \
-      "签名校验未通过。原版未改动。可重新运行本脚本。" \
-      "Signature check failed. The original app was not modified. You can run this script again."
-  fi
+  sign_dest
 
   note "" \
     "完成。 / Done." \

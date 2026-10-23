@@ -18,13 +18,20 @@ Download **`DuckovCoopPrepare-mac.zip`** from [Releases](https://github.com/zjum
 
 If macOS says the developer cannot be verified, Control-click the app and choose Open. An Apple Developer account is not required.
 
+窗口标题 / Window title: 《逃离鸭科夫》Mac 联机 Mod 支持工具（English: Escape from Duckov — Mac co-op Mod support tool）。
+
+从上到下三步 / Three steps, top to bottom:
+
+1. **第一步：准备联机副本 / Step 1: Prepare co-op copy** — 原版路径、副本路径（默认 `~/Applications/Duckov-COOP.app`），以及这一步里的蓝色「准备联机副本」。
+2. **第二步：配置文件同步 / Step 2: Sync config files** — 打开两边的配置文件夹，或用带「（同步文件）」的按钮互相镜像。
+3. **第三步：配置（支持Mac的）联机 Mod / Step 3: Configure (Mac-compatible) co-op Mod** — 选择已经下载的 Mac 联机 Mod，或点下载按钮。副本已存在时会装进 `Contents/Mods/` 并重新签名；还不存在时记下路径，等第一步准备时装入。
+
 | 按钮 / Button | 作用 / What it does |
 | --- | --- |
-| 准备联机副本 / Prepare co-op copy | 复制、改副本权限、本机签名，并在有 Mods 路径时装入含 `.dll` 的最外层文件夹 |
-| 下载最新测试 Mac 联机 Mod / Download latest test Mac co-op mod | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布），解压后填入 Mods 路径 |
-| 打开 GitHub 页面 / Open GitHub | 在浏览器打开本 Fork 的 Releases |
-| 要新增加的 Mods 文件夹（可选）/ Extra Mods folder to add (optional) | 只装入含 `.dll` 的最外层文件夹（整包复制到副本 `Contents/Mods/包名/`）。没有 `.dll` 的文件夹跳过。留空则不装新 Mod，已有 Mods 仍会放回 |
-| 打开 / Open | 在访达中显示原版 App、副本或 Mods 路径。`.app` 只显示，不启动 |
+| 准备联机副本 / Prepare co-op copy | 在第一步里：复制、改副本权限、本机签名。第三步有路径时，装入含 `.dll` 的最外层文件夹 |
+| 自动下载并更新最新支持 Mac 的联机 Mod 到副本 Mods 位置 / Auto-download and update the latest Mac-compatible co-op Mod into the copy's Mods folder | 下载最新的 `EscapeFromDuckovCoopMod*.zip`（含预发布）并解压。副本已存在则装入 `Contents/Mods/` 并重新签名；否则记下路径 |
+| 打开 GitHub 页面 / Open GitHub | 右上角浅绿色按钮，在浏览器打开本 Fork 的 Releases。不是一个步骤 |
+| 打开 / Open | 在访达中显示原版 App、副本或 Mod 路径。`.app` 只显示，不启动 |
 | 打开原版配置位置 / Open original config folder | 打开原版配置位置（原版沙盒配置）。不存在时提示，不创建 |
 | 打开联机副本配置位置 / Open co-op config folder | 打开联机副本配置位置。必要时创建该文件夹 |
 | （同步文件）原版配置 → 联机副本 / (sync files) original → co-op | 把原版配置位置的内容镜像到联机副本配置位置（`rsync -a --delete`） |
@@ -38,9 +45,9 @@ After a successful prepare, the done dialog can run original → co-op sync imme
 
 The original app keeps App Sandbox, so config is the original config folder: `~/Library/Containers/com.bilibili.duckov/Data/Library/Application Support/com.bilibili.duckov`. The co-op copy has App Sandbox off, so config is the co-op config folder: `~/Library/Application Support/com.bilibili.duckov`. The bundle id is the same. The split is sandbox on versus off, not where the `.app` file lives. Quit both games before syncing. If reading the original config folder prints Operation not permitted, add `DuckovCoopPrepare.app` under System Settings → Privacy & Security → Full Disk Access.
 
-窗口里：原版和副本路径在上方，紧接着 Mods 方框；配置方框下面就是状态和日志。「打开 GitHub 页面」在右上角，是一颗灰色按钮；「准备联机副本」是最下方居中的蓝色按钮。
+窗口里：右上角是浅绿色的「打开 GitHub 页面」。下面按第一步、第二步、第三步排开，说明文字按内容换行，不再为配置说明预留大块空白。蓝色「准备联机副本」在第一步里居中。底部进度文字区域是浅色底。
 
-In the window: the original app and the copy path are at the top, then the Mods box; status and the log sit just under the config box. Open GitHub is a gray button at the top-right; Prepare co-op copy is a centered blue button at the bottom.
+In the window: Open GitHub is a light-green button at the top-right. Step 1, Step 2, and Step 3 follow, with help text sized to its wrapped height so the config section does not keep a large empty band. The blue Prepare co-op copy button is centered in Step 1. The progress text area at the bottom has a light background.
 
 ## 文件 / Files
 
@@ -60,11 +67,12 @@ In the window: the original app and the copy path are at the top, then the Mods 
 chmod +x prepare-duckov-coop-app.sh sync-duckov-config.sh
 ./prepare-duckov-coop-app.sh
 ./prepare-duckov-coop-app.sh --source "/path/to/Duckov.app" --mods-dir /path/to/Mods
+./prepare-duckov-coop-app.sh --update-mods --dest "$HOME/Applications/Duckov-COOP.app" --mods-dir /path/to/Mods
 ./sync-duckov-config.sh --direction original-to-coop
 ./sync-duckov-config.sh --direction coop-to-original
 ```
 
-参数 / Flags: `--source`, `--dest`, `--mods-dir`, `--force`. 同目录若有 `EscapeFromDuckovCoopMod*.zip`，会在签名前装入副本的 `Contents/Mods/`。`sync-duckov-config.sh` 只用 `--direction original-to-coop`（原版配置位置 → 联机副本配置位置）或 `coop-to-original`（联机副本配置位置 → 原版配置位置）。
+参数 / Flags: `--source`, `--dest`, `--mods-dir`, `--force`, `--update-mods`. `--update-mods` 不重拷整份游戏，只把 `--mods-dir` 里的 Mac 联机 Mod 装进已经存在的副本 `Contents/Mods/`，再用本机 `codesign` 身份 `-` 重新签名。同目录若有 `EscapeFromDuckovCoopMod*.zip`，完整准备时会在签名前装入副本的 `Contents/Mods/`。`sync-duckov-config.sh` 只用 `--direction original-to-coop`（原版配置位置 → 联机副本配置位置）或 `coop-to-original`（联机副本配置位置 → 原版配置位置）。
 
 `sync-duckov-config.sh` accepts `--direction original-to-coop` (original config folder → co-op config folder) or `coop-to-original` (co-op config folder → original config folder).
 
