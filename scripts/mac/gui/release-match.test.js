@@ -42,6 +42,25 @@ assert.strictEqual(
   matcher.RELEASE_DOWNLOAD_PREFIX + 'v/EscapeFromDuckovCoopMod.V1.4.2_melody.zip'
 );
 
+// Prefer _melody even when an older -test release is listed first (API/publish order).
+var preferMelody = matcher.selectCoopModAsset([
+  {
+    draft: false,
+    prerelease: true,
+    tag_name: 'v1.4.2-test',
+    assets: [asset('EscapeFromDuckovCoopMod.V1.4.2-test.zip')]
+  },
+  {
+    draft: false,
+    prerelease: true,
+    tag_name: 'v1.4.2_melody',
+    assets: [asset('EscapeFromDuckovCoopMod.V1.4.2_melody.zip')]
+  }
+]);
+assert.strictEqual(preferMelody.tag, 'v1.4.2_melody');
+assert.strictEqual(preferMelody.name, 'EscapeFromDuckovCoopMod.V1.4.2_melody.zip');
+
+
 assert.strictEqual(matcher.selectCoopModAsset([]), null);
 assert.strictEqual(matcher.selectCoopModAsset(null), null);
 assert.strictEqual(matcher.selectCoopModAsset({}), null);
@@ -110,8 +129,11 @@ assert.strictEqual(matcher.versionsSame('V1.4.2_melody', '1.4.2_melody'), true);
 assert.strictEqual(matcher.versionsSame('1.4.2', '1.4.2_melody'), false);
 assert.strictEqual(matcher.versionsSame('1.4.2-test', '1.4.2_melody'), false);
 assert.strictEqual(matcher.versionIsNewer('1.4.2_melody', '1.4.1'), true);
-assert.strictEqual(matcher.versionIsNewer('1.4.2_melody', '1.4.2-test'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2_melody', '1.4.2-test'), true);
 assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.2_melody'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2_melody', '1.4.2'), true);
+assert.strictEqual(matcher.versionIsNewer('1.4.2', '1.4.2_melody'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2_melody', '1.4.2_melody'), false);
 assert.strictEqual(matcher.versionsSame('', ''), false);
 assert.strictEqual(matcher.versionsSame('-', '1.4.2'), false);
 assert.strictEqual(matcher.versionIsNewer('1.4.2', '1.4.1'), true);
@@ -119,8 +141,11 @@ assert.strictEqual(matcher.versionIsNewer('1.4.1', '1.4.2'), false);
 assert.strictEqual(matcher.versionIsNewer('1.10.0', '1.9.9'), true);
 assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.1'), true);
 assert.strictEqual(matcher.versionIsNewer('1.4.2', '1.4.2-test'), false);
-assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.2'), false);
+assert.strictEqual(matcher.versionIsNewer('1.4.2-test', '1.4.2'), true);
 assert.deepStrictEqual(matcher.versionParts('V1.10.2-test'), [1, 10, 2]);
+assert.strictEqual(matcher.versionSuffixRank('1.4.2_melody'), 2);
+assert.strictEqual(matcher.versionSuffixRank('1.4.2-test'), 1);
+assert.strictEqual(matcher.versionSuffixRank('1.4.2'), 0);
 
 assert.strictEqual(matcher.downloadButtonState([], '1.4.2_melody', true), 'idle');
 assert.strictEqual(matcher.downloadButtonState(null, '1.4.2_melody', true), 'idle');
@@ -138,6 +163,18 @@ assert.strictEqual(
 assert.strictEqual(
   matcher.downloadButtonState([{ version: '1.4.2_melody', channel: 'melody-fork' }], '1.4.2_melody', true),
   'ready'
+);
+assert.strictEqual(
+  matcher.downloadButtonState([{ version: '1.4.2_melody', channel: 'melody-fork' }], '1.4.2-test', true),
+  'ready'
+);
+assert.strictEqual(
+  matcher.downloadButtonState([{ version: '1.4.2-test', channel: 'melody-fork' }], '1.4.2_melody', true),
+  'outdated'
+);
+assert.strictEqual(
+  matcher.downloadButtonState([{ version: '1.4.2', channel: 'melody-fork' }], '1.4.2_melody', true),
+  'outdated'
 );
 assert.strictEqual(
   matcher.downloadButtonState([{ version: 'V1.4.2_melody', channel: 'melody-fork' }], '1.4.2_melody', true),

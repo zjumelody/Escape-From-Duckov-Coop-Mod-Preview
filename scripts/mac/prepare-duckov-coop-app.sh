@@ -54,8 +54,8 @@ Copy an official Duckov.app to a writable location, adjust entitlements on the c
 and re-sign that copy with the local codesign identity "-".
 
 推荐 / Recommended:
-  图形工具 DuckovCoopPrepare.app（Release 附件 DuckovCoopPrepare-mac-1.5.0.zip）。
-  The graphical app DuckovCoopPrepare.app (Release asset DuckovCoopPrepare-mac-1.5.0.zip).
+  图形工具 DuckovCoopPrepare.app（Release 附件 DuckovCoopPrepare-mac-1.5.1.zip）。
+  The graphical app DuckovCoopPrepare.app (Release asset DuckovCoopPrepare-mac-1.5.1.zip).
   本脚本是高级备用方式。 / This script is the advanced fallback.
 
 默认 / Defaults:
@@ -413,8 +413,29 @@ version_parts() {
   printf '%s %s %s\n' "$major" "$minor" "$patch"
 }
 
+version_suffix_rank() {
+  local v num suffix
+  v="$(normalize_version_label "$1")"
+  [[ -n "$v" ]] || { printf '0\n'; return 0; }
+  num="${v%%[-_+]*}"
+  suffix="${v#"$num"}"
+  if [[ -z "$suffix" ]]; then
+    printf '0\n'
+    return 0
+  fi
+  case "$suffix" in
+    _melody|_melody*)
+      printf '2\n'
+      ;;
+    *)
+      printf '1\n'
+      ;;
+  esac
+}
+
+# Same numeric base: _melody > other suffixes (e.g. -test) > bare.
 version_is_newer() {
-  local a1 b1 c1 a2 b2 c2
+  local a1 b1 c1 a2 b2 c2 r1 r2
   read -r a1 b1 c1 <<<"$(version_parts "$1")"
   read -r a2 b2 c2 <<<"$(version_parts "$2")"
   if (( a1 != a2 )); then
@@ -435,7 +456,9 @@ version_is_newer() {
     fi
     return 1
   fi
-  return 1
+  r1="$(version_suffix_rank "$1")"
+  r2="$(version_suffix_rank "$2")"
+  (( r1 > r2 ))
 }
 
 ini_marks_coop_family() {
@@ -1752,9 +1775,15 @@ run_self_test() {
   if versions_same "1.4.2-test" "1.4.2_melody"; then
     die "self-test: 1.4.2-test and 1.4.2_melody should not match"
   fi
-  if version_is_newer "1.4.2_melody" "1.4.2-test"; then
-    die "self-test: same numeric base _melody should not be newer than -test"
+  version_is_newer "1.4.2_melody" "1.4.2-test" || die "self-test: 1.4.2_melody should be newer than 1.4.2-test"
+  if version_is_newer "1.4.2-test" "1.4.2_melody"; then
+    die "self-test: 1.4.2-test should not be newer than 1.4.2_melody"
   fi
+  version_is_newer "1.4.2_melody" "1.4.2" || die "self-test: 1.4.2_melody should be newer than bare 1.4.2"
+  if version_is_newer "1.4.2" "1.4.2_melody"; then
+    die "self-test: bare 1.4.2 should not be newer than 1.4.2_melody"
+  fi
+  version_is_newer "1.4.2-test" "1.4.2" || die "self-test: 1.4.2-test should be newer than bare 1.4.2"
   [[ "$(coop_install_dir_name "1.4.2_melody")" == "3591341282_EscapeFromDuckovCoopMod_1.4.2_melody" ]] || die "self-test: _melody install dir name wrong"
   if versions_same "" ""; then
     die "self-test: empty versions should not count as the same"
