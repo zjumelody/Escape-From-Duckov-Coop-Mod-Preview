@@ -60,9 +60,11 @@ Quit the original game and the co-op copy first. Files that exist only in the
 destination are deleted.
 
 若读取原版配置位置时出现 Operation not permitted，请在
-「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中加入 DuckovCoopPrepare.app 后重试。
-If reading the original config folder prints Operation not permitted, add DuckovCoopPrepare.app
-under System Settings → Privacy & Security → Full Disk Access, then try again.
+「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中加入 /bin/bash（点 + → ⌘⇧G → 输入 /bin/bash）后重试。
+图形界面 DuckovCoopPrepare 已尽量在本进程同步；本脚本经 bash 运行，仍需要给 /bin/bash 授权。
+If reading the original config folder prints Operation not permitted, add /bin/bash
+under System Settings → Privacy & Security → Full Disk Access (+ → ⌘⇧G → /bin/bash), then try again.
+The DuckovCoopPrepare GUI prefers in-process sync; this script still runs under bash and needs bash FDA.
 
 环境变量 / Environment:
   DUCKOV_GUI_LOG  若设置，进度会同时追加写入该文件（供图形工具显示）
@@ -389,7 +391,11 @@ dispatch() {
 
 run_self_test() {
   local root home loc1 loc2 sibling
-  root="$(mktemp -d "${TMPDIR:-/tmp}/duckov-sync-test.XXXXXX")"
+  # Strip trailing slash on TMPDIR so normalize_path does not see an empty // segment.
+  # 去掉 TMPDIR 末尾斜杠，避免路径里出现空段被 normalize_path 拒绝。
+  local tmpbase="${TMPDIR:-/tmp}"
+  tmpbase="${tmpbase%/}"
+  root="$(mktemp -d "${tmpbase}/duckov-sync-test.XXXXXX")"
   SELF_TEST_DIR="$root"
   # 路径里留一个空格，确认 Application Support 这种文件夹名不会被拆开。
   # Keep a space in the path so names like "Application Support" stay intact.
@@ -464,6 +470,30 @@ run_self_test() {
     die "self-test: generic Permission denied was treated as Full Disk Access"
   fi
   rm -f "$tcc"
+
+  # Empty folder on both sides with unequal mtimes: rsync -a must align dest mtime.
+  # 两边同名空文件夹时间不同：rsync -a 同步后目标 mtime 应与来源一致。
+  mkdir -p "$loc1/Saves" "$loc2/Saves"
+  printf '%s\n' 'mtime-slot' >"$loc1/Saves/slot.txt"
+  printf '%s\n' 'mtime-slot' >"$loc2/Saves/slot.txt"
+  mkdir -p "$loc1/新建文件夹" "$loc2/新建文件夹"
+  touch -t 202001011200.00 "$loc1/新建文件夹"
+  touch -t 202001021400.00 "$loc2/新建文件夹"
+  "$BASH" "$0" --direction original-to-coop
+  local t1 t2
+  t1="$(stat -f %m "$loc1/新建文件夹" 2>/dev/null || stat -c %Y "$loc1/新建文件夹")"
+  t2="$(stat -f %m "$loc2/新建文件夹" 2>/dev/null || stat -c %Y "$loc2/新建文件夹")"
+  [[ "$t1" == "$t2" ]] || die "self-test: empty folder mtime not synced ($t1 vs $t2)"
+  # Empty folder only on source must appear on dest.
+  # 仅来源有空文件夹时，目标必须出现该文件夹。
+  rm -rf "$loc2/仅来源空目录"
+  mkdir -p "$loc1/仅来源空目录"
+  touch -t 202001031600.00 "$loc1/仅来源空目录"
+  "$BASH" "$0" --direction original-to-coop
+  [[ -d "$loc2/仅来源空目录" ]] || die "self-test: empty folder only on source was not created on dest"
+  t1="$(stat -f %m "$loc1/仅来源空目录" 2>/dev/null || stat -c %Y "$loc1/仅来源空目录")"
+  t2="$(stat -f %m "$loc2/仅来源空目录" 2>/dev/null || stat -c %Y "$loc2/仅来源空目录")"
+  [[ "$t1" == "$t2" ]] || die "self-test: source-only empty folder mtime mismatch ($t1 vs $t2)"
 
   note "self-test ok"
 }

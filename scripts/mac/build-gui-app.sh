@@ -32,6 +32,7 @@ cp "$ROOT/gui/release-match.js" "$APP/Contents/Resources/release-match.js"
 cp "$ROOT/gui/config-sync-state.js" "$APP/Contents/Resources/config-sync-state.js"
 cp "$ROOT/gui/fetch-mod-zip.sh" "$APP/Contents/Resources/fetch-mod-zip.sh"
 cp "$ROOT/gui/config-fingerprint.sh" "$APP/Contents/Resources/config-fingerprint.sh"
+cp "$ROOT/gui/check-coop-copy.sh" "$APP/Contents/Resources/check-coop-copy.sh"
 cp "$ROOT/prepare-duckov-coop-app.sh" "$APP/Contents/Resources/prepare-duckov-coop-app.sh"
 cp "$ROOT/sync-duckov-config.sh" "$APP/Contents/Resources/sync-duckov-config.sh"
 cp "$ROOT/duckov-coop.entitlements" "$APP/Contents/Resources/duckov-coop.entitlements"
@@ -40,7 +41,8 @@ chmod 755 "$APP/Contents/MacOS/DuckovCoopPrepare" \
   "$APP/Contents/Resources/prepare-duckov-coop-app.sh" \
   "$APP/Contents/Resources/fetch-mod-zip.sh" \
   "$APP/Contents/Resources/sync-duckov-config.sh" \
-  "$APP/Contents/Resources/config-fingerprint.sh"
+  "$APP/Contents/Resources/config-fingerprint.sh" \
+  "$APP/Contents/Resources/check-coop-copy.sh"
 chmod 644 "$APP/Contents/Info.plist" \
   "$APP/Contents/PkgInfo" \
   "$APP/Contents/Resources/main.js" \
@@ -55,7 +57,8 @@ chmod 755 "$STAGE/DuckovCoopPrepare.app/Contents/MacOS/DuckovCoopPrepare" \
   "$STAGE/DuckovCoopPrepare.app/Contents/Resources/prepare-duckov-coop-app.sh" \
   "$STAGE/DuckovCoopPrepare.app/Contents/Resources/fetch-mod-zip.sh" \
   "$STAGE/DuckovCoopPrepare.app/Contents/Resources/sync-duckov-config.sh" \
-  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/config-fingerprint.sh"
+  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/config-fingerprint.sh" \
+  "$STAGE/DuckovCoopPrepare.app/Contents/Resources/check-coop-copy.sh"
 
 if [[ "$(uname -s)" == "Darwin" ]] && command -v codesign >/dev/null 2>&1; then
   if codesign --force --deep --sign - "$APP" && codesign --force --deep --sign - "$STAGE/DuckovCoopPrepare.app"; then

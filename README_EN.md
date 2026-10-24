@@ -101,7 +101,7 @@ If a Release zip (for example `EscapeFromDuckovCoopMod*.zip`) sits next to the s
 2. Adjust entitlements on the copy: turn off App Sandbox; enable `com.apple.security.network.client` and `com.apple.security.network.server`.
 3. Sign that copy with local `codesign` identity `-`. Each player signs their own copy on their own Mac.
 4. Put this fork's co-op mod from Releases (and any dependency mods you need) in `Duckov-COOP.app/Contents/Mods/`.
-5. **Launch only** `Duckov-COOP.app` for co-op. Every peer must use the exact same ModVersion string (one shared version for Windows and Mac, for example `1.4.2` from Releases).
+5. **Launch only** `Duckov-COOP.app` for co-op. Every peer must use the exact same ModVersion string (one shared version for Windows and Mac, for example `1.4.2_melody` from Releases).
 
 ### Notes
 

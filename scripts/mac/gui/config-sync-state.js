@@ -10,17 +10,21 @@
 // Two trees are fully identical when both exist, both are readable, nothing was
 // skipped, and those records match. mtime is not part of identity.
 //
-// Which side is newer: the maximum mtime, in whole seconds, among tracked regular
-// files and symlinks. Directory mtime is the fallback only when that side has no
-// files or symlinks, so a Finder .DS_Store does not make a folder look newer.
+// Which side is newer (identical and different share the same leaf/dir rule):
+// - If both sides have unequal leaf mtimes (files/symlinks), use leaf only
+//   (file edits bump parent dir mtime on APFS, which would otherwise tie).
+// - If leaf mtimes are equal or missing, use max(leaf, NEWEST_DIR_MTIME) so a
+//   newly created empty folder makes that side newer — including when both sides
+//   add the SAME-named empty folder (fingerprint still identical; Finder default
+//   names like 新建文件夹 / 未命名文件夹). Leaf-only on identical used to hide that.
 // A missing folder is older than one that exists. Equal maximums, with different
 // contents, do not pick a direction.
 //
-// Button colors, for the outbound sync buttons:
-// - both green when the fingerprints match
-// - newer side's outbound button blue, older side's outbound button yellow
-// - both yellow when the trees differ and neither maximum is newer
-// - both neutral when a side cannot be read, a path was skipped, or neither folder exists
+// Button colors are painted in main.js syncOutboundPaintColor (GUI):
+// - identical: newer green, older blue; equal mtime → both green
+// - different: newer cyan, older yellow; equal mtime → both cyan
+// - unreadable / no mtime → orange (GUI); detecting → grey
+// compareConfigSides still reports toCoop/toOriginal for describeCompare text.
 //
 // Timestamps are formatted for a caller-supplied offset (the Mac's local zone in
 // the GUI; tests pass minutes east of UTC). Chinese month and day are zero-padded
@@ -33,6 +37,9 @@ function pad2(n) {
 }
 
 function formatSyncStamp(epochSeconds, offsetMinutes) {
+  // offsetMinutes = local zone minutes east of UTC (e.g. Asia/Shanghai = 480).
+  // Callers must pass the system/local offset — not 0 (UTC) — so 「最后更新于」 matches Finder.
+  // offsetMinutes 为本地时区相对 UTC 的分钟（如 Asia/Shanghai = 480）；不要传 0，否则会显示成 UTC。
   var epoch = Number(epochSeconds);
   var offset = Number(offsetMinutes);
   if (!isFinite(epoch) || !isFinite(offset)) return null;
@@ -47,16 +54,22 @@ function formatSyncStamp(epochSeconds, offsetMinutes) {
 }
 
 function syncButtonLines(which, epochSeconds, offsetMinutes) {
+  // Line 1 ZH action, line 2 EN action, line 3 Simplified Chinese only:
+  // stamp when mtime known, or a permission hint when the caller asks.
+  // 第 1 行中文、第 2 行英文、第 3 行仅简体：有 mtime 显示「最后更新于：」，否则可由调用方改成授权提示。
   var lines = which === 'to-coop'
     ? ['（同步文件）原版配置 → 联机副本', '(sync files) original → co-op']
     : ['（同步文件）联机副本 → 原版配置', '(sync files) co-op → original'];
   if (epochSeconds == null || epochSeconds === '') return lines;
   var stamp = formatSyncStamp(epochSeconds, offsetMinutes);
   if (!stamp) return lines;
-  return lines.concat([
-    '最后更新于：' + stamp.zh,
-    'Last updated: ' + stamp.en
-  ]);
+  return lines.concat(['最后更新于：' + stamp.zh]);
+}
+
+function syncPermissionHintLine() {
+  // CONFIG detect/sync buttons only. Not for Mods / Finder open (those need no bash FDA).
+  // 仅配置检测/同步按钮。Mods / 访达打开不需要 bash FDA。
+  return '需要授权：「系统设置 → 隐私与安全性 → 完全磁盘访问权限」添加 /bin/bash';
 }
 
 function emptySide() {
@@ -64,6 +77,7 @@ function emptySide() {
     exists: false,
     readable: true,
     newestMtime: null,
+    newestDirMtime: null,
     records: [],
     skipped: false,
     error: ''
@@ -114,6 +128,15 @@ function parseFingerprint(text) {
       }
       continue;
     }
+    if (line.indexOf('NEWEST_DIR_MTIME ') === 0) {
+      raw = line.substring(17);
+      if (!raw || raw === '-') current.newestDirMtime = null;
+      else {
+        n = Number(raw);
+        current.newestDirMtime = isFinite(n) ? n : null;
+      }
+      continue;
+    }
     if (line.charAt(0) === 'F' || line.charAt(0) === 'D' || line.charAt(0) === 'L') {
       current.records.push(line);
     }
@@ -132,23 +155,67 @@ function recordsEqual(a, b) {
   return true;
 }
 
-function mtimeRank(side) {
+function mtimeRank(side, includeDirs) {
   if (!side || !side.exists) return -1;
-  if (side.newestMtime == null || !isFinite(side.newestMtime)) return 0;
-  return side.newestMtime;
+  var leaf = side.newestMtime;
+  var dir = side.newestDirMtime;
+  var best = null;
+  if (leaf != null && isFinite(leaf)) best = leaf;
+  if (includeDirs && dir != null && isFinite(dir)) {
+    if (best == null || dir > best) best = dir;
+  }
+  if (best == null) return 0;
+  return best;
+}
+
+function effectiveSideMtime(side, includeDirs) {
+  if (!side || !side.exists) return null;
+  var leaf = side.newestMtime;
+  var dir = side.newestDirMtime;
+  var best = null;
+  if (leaf != null && isFinite(leaf)) best = leaf;
+  if (includeDirs && dir != null && isFinite(dir)) {
+    if (best == null || dir > best) best = dir;
+  }
+  return best;
+}
+
+function sideReadableFlag(side) {
+  return !!(side && side.exists && side.readable && !side.skipped);
 }
 
 function compareConfigSides(original, coop) {
+  // Always report per-side readable from THIS fingerprint. GUI must not treat a
+  // leftover mtime as permission — orange unless readable AND fresh mtime.
+  // 每次指纹都带上两侧可读标记；GUI 不能单靠旧 mtime 当有权限，必须可读且有新 mtime 才绿/黄。
+  var oRead = sideReadableFlag(original);
+  var cRead = sideReadableFlag(coop);
   var unknown = {
     status: 'unknown',
     identical: false,
     toCoop: 'neutral',
     toOriginal: 'neutral',
     originalMtime: null,
-    coopMtime: null
+    coopMtime: null,
+    originalReadable: false,
+    coopReadable: false
   };
-  if (!original || !coop || !original.readable || !coop.readable || original.skipped || coop.skipped) {
+  if (!original || !coop) {
     return unknown;
+  }
+  if (!original.readable || !coop.readable || original.skipped || coop.skipped) {
+    return {
+      status: 'unreadable',
+      identical: false,
+      toCoop: 'neutral',
+      toOriginal: 'neutral',
+      // Mtime only when that side was freshly readable in this probe.
+      // 仅本轮探测可读时才带 mtime。
+      originalMtime: oRead ? original.newestMtime : null,
+      coopMtime: cRead ? coop.newestMtime : null,
+      originalReadable: oRead,
+      coopReadable: cRead
+    };
   }
   if (!original.exists && !coop.exists) {
     return {
@@ -157,21 +224,35 @@ function compareConfigSides(original, coop) {
       toCoop: 'neutral',
       toOriginal: 'neutral',
       originalMtime: null,
-      coopMtime: null
+      coopMtime: null,
+      originalReadable: false,
+      coopReadable: false
     };
   }
+  // Shared rule for identical and different: prefer unequal leaf mtimes; when
+  // leaves tie/missing, fold in directory mtimes so empty-folder create times
+  // still show 较新/较旧 (including same-named folders that keep fingerprints equal).
+  // 相同与不同共用：优先不相同的文件时间；文件时间相同或没有时并入目录时间，
+  // 使两边同名空文件夹（指纹仍相同）也能按创建时间显示较新/较旧。
+  var oLeaf = effectiveSideMtime(original, false);
+  var cLeaf = effectiveSideMtime(coop, false);
+  var useDirs = !(oLeaf != null && cLeaf != null && oLeaf !== cLeaf);
   if (original.exists && coop.exists && recordsEqual(original.records, coop.records)) {
     return {
       status: 'identical',
       identical: true,
       toCoop: 'green',
       toOriginal: 'green',
-      originalMtime: original.newestMtime,
-      coopMtime: coop.newestMtime
+      originalMtime: effectiveSideMtime(original, useDirs),
+      coopMtime: effectiveSideMtime(coop, useDirs),
+      originalReadable: oRead,
+      coopReadable: cRead
     };
   }
-  var oRank = mtimeRank(original);
-  var cRank = mtimeRank(coop);
+  var oEff = original.exists ? effectiveSideMtime(original, useDirs) : null;
+  var cEff = coop.exists ? effectiveSideMtime(coop, useDirs) : null;
+  var oRank = mtimeRank(original, useDirs);
+  var cRank = mtimeRank(coop, useDirs);
   var toCoop;
   var toOriginal;
   if (oRank > cRank) {
@@ -189,8 +270,10 @@ function compareConfigSides(original, coop) {
     identical: false,
     toCoop: toCoop,
     toOriginal: toOriginal,
-    originalMtime: original.exists ? original.newestMtime : null,
-    coopMtime: coop.exists ? coop.newestMtime : null
+    originalMtime: oEff,
+    coopMtime: cEff,
+    originalReadable: oRead,
+    coopReadable: cRead
   };
 }
 
@@ -201,6 +284,12 @@ function describeCompare(result) {
       en: 'The two config folders could not be compared yet. The sync buttons stay grey.'
     };
   }
+  if (result.status === 'unreadable') {
+    return {
+      zh: '有一侧「配置文件夹」无法读取（与 Mods/Contents/Mods 无关；请给 /bin/bash 完全磁盘访问：+ → ⌘⇧G → /bin/bash），无法判断是否一致；步骤标题显示 ⚠️。',
+      en: 'One config folder could not be read (unrelated to Mods/Contents/Mods; grant Full Disk Access to /bin/bash via + → ⌘⇧G). Identity cannot be decided; Step 2 shows ⚠️.'
+    };
+  }
   if (result.status === 'missing') {
     return {
       zh: '两边的配置文件夹都还不存在，同步按钮保持灰色。',
@@ -208,6 +297,24 @@ function describeCompare(result) {
     };
   }
   if (result.identical) {
+    var oM = result.originalMtime;
+    var cM = result.coopMtime;
+    var oN = (oM == null || oM === '') ? NaN : Number(oM);
+    var cN = (cM == null || cM === '') ? NaN : Number(cM);
+    // Content match but mtimes differ → still green/yellow by time (buttons).
+    // 内容相同但 mtime 不同 → 按钮仍按时间绿/黄。
+    if (isFinite(oN) && isFinite(cN) && oN !== cN) {
+      if (oN > cN) {
+        return {
+          zh: '两边配置内容一致，但原版更新时间较新：原版 → 副本为绿色，副本 → 原版为蓝色。',
+          en: 'Config contents match, but original is newer by mtime: original → co-op green, co-op → original blue.'
+        };
+      }
+      return {
+        zh: '两边配置内容一致，但联机副本更新时间较新：副本 → 原版为绿色，原版 → 副本为蓝色。',
+        en: 'Config contents match, but co-op is newer by mtime: co-op → original green, original → co-op blue.'
+      };
+    }
     return {
       zh: '两边配置（包括存档）一致，两个同步按钮为绿色。',
       en: 'The config folders, including saves, match. Both sync buttons are green.'
@@ -215,14 +322,14 @@ function describeCompare(result) {
   }
   if (result.toCoop === 'blue') {
     return {
-      zh: '原版配置更新。原版 → 副本为蓝色，副本 → 原版为黄色。',
-      en: 'The original config is newer. Original → co-op is blue. Co-op → original is yellow.'
+      zh: '原版配置更新（内容不同）：原版 → 副本为青色，副本 → 原版为黄色。',
+      en: 'The original config is newer (contents differ): original → co-op cyan, co-op → original yellow.'
     };
   }
   if (result.toOriginal === 'blue') {
     return {
-      zh: '联机副本配置更新。副本 → 原版为蓝色，原版 → 副本为黄色。',
-      en: 'The co-op config is newer. Co-op → original is blue. Original → co-op is yellow.'
+      zh: '联机副本配置更新（内容不同）：副本 → 原版为青色，原版 → 副本为黄色。',
+      en: 'The co-op config is newer (contents differ): co-op → original cyan, original → co-op yellow.'
     };
   }
   return {
@@ -234,6 +341,7 @@ function describeCompare(result) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports.formatSyncStamp = formatSyncStamp;
   module.exports.syncButtonLines = syncButtonLines;
+  module.exports.syncPermissionHintLine = syncPermissionHintLine;
   module.exports.parseFingerprint = parseFingerprint;
   module.exports.compareConfigSides = compareConfigSides;
   module.exports.describeCompare = describeCompare;
