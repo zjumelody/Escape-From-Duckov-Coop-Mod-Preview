@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/DuckovCoopPrepare.app"
-# Zip name includes the tool version from Info.plist (CFBundleShortVersionString), e.g. DuckovCoopPrepare-mac-1.5.0.zip
+# Zip name includes the tool version from Info.plist (CFBundleShortVersionString), e.g. DuckovCoopPrepare-mac-1.5.1.zip
 TOOL_VERSION="$(
   if command -v plutil >/dev/null 2>&1; then
     plutil -extract CFBundleShortVersionString raw "$ROOT/gui/Info.plist" 2>/dev/null || true

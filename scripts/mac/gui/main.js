@@ -14,7 +14,7 @@ ObjC.import('Foundation');
 
 var RELEASES_PAGE = 'https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases';
 var RELEASES_API = 'https://api.github.com/repos/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases?per_page=100';
-var TOOL_VERSION = '1.5.0';
+var TOOL_VERSION = '1.5.1';
 var PREPARE_ZIP_NAME = 'DuckovCoopPrepare-mac-' + TOOL_VERSION + '.zip';
 
 var controller = null;

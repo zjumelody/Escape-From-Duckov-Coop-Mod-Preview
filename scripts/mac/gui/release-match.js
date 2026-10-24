@@ -90,6 +90,18 @@ function versionsSame(a, b) {
   return !!left && left === right;
 }
 
+// Same numeric base: _melody > other suffixes (e.g. -test) > bare.
+// So 1.4.2_melody is preferred over 1.4.2-test and over upstream 1.4.2.
+function versionSuffixRank(text) {
+  var v = normalizeVersionLabel(text);
+  if (!v) return 0;
+  var num = v.split(/[-_+]/)[0];
+  var suffix = v.substring(num.length);
+  if (!suffix) return 0;
+  if (suffix === '_melody' || suffix.indexOf('_melody') === 0) return 2;
+  return 1;
+}
+
 function versionIsNewer(left, right) {
   var a = versionParts(left);
   var b = versionParts(right);
@@ -97,7 +109,7 @@ function versionIsNewer(left, right) {
   for (i = 0; i < 3; i++) {
     if (a[i] !== b[i]) return a[i] > b[i];
   }
-  return false;
+  return versionSuffixRank(left) > versionSuffixRank(right);
 }
 
 // Normalize list entries to { version, channel }. Accepts legacy string[] of versions
@@ -181,6 +193,16 @@ function pickInstalledVersionLabel(localMods, preferMelody) {
   return firstUpstream || (mods.length ? (mods[0].version || '-') : '-');
 }
 
+function candidateIsMelody(name, tag) {
+  var label = normalizeVersionLabel(releaseAssetVersionLabel(name, tag));
+  if (label.indexOf('_melody') !== -1) return true;
+  var n = String(name || '').toLowerCase();
+  var t = String(tag || '').toLowerCase();
+  if (n.indexOf('_melody') !== -1) return true;
+  if (t.indexOf('_melody') !== -1) return true;
+  return false;
+}
+
 function selectCoopModAsset(releases) {
   var i;
   var j;
@@ -189,26 +211,64 @@ function selectCoopModAsset(releases) {
   var asset;
   var name;
   var url;
+  var tag;
+  var candidates;
+  var best;
+  var bestMelody;
+  var version;
+  var bestVersion;
   if (!releases || typeof releases.length !== 'number') return null;
+  candidates = [];
   for (i = 0; i < releases.length; i++) {
     rel = releases[i];
     if (!rel || rel.draft) continue;
     assets = rel.assets || [];
+    tag = rel.tag_name ? String(rel.tag_name) : '';
     for (j = 0; j < assets.length; j++) {
       asset = assets[j];
       if (!asset) continue;
       name = asset.name ? String(asset.name) : '';
       url = asset.browser_download_url ? String(asset.browser_download_url) : '';
       if (!safeModZipName(name) || !url) continue;
-      return {
-        tag: rel.tag_name ? String(rel.tag_name) : '',
+      candidates.push({
+        tag: tag,
         name: name,
         url: url,
-        prerelease: rel.prerelease ? true : false
-      };
+        prerelease: rel.prerelease ? true : false,
+        melody: candidateIsMelody(name, tag),
+        version: releaseAssetVersionLabel(name, tag)
+      });
     }
   }
-  return null;
+  if (!candidates.length) return null;
+  best = null;
+  bestMelody = null;
+  for (i = 0; i < candidates.length; i++) {
+    asset = candidates[i];
+    if (asset.melody) {
+      if (!bestMelody) {
+        bestMelody = asset;
+      } else {
+        version = asset.version;
+        bestVersion = bestMelody.version;
+        if (versionIsNewer(version, bestVersion)) bestMelody = asset;
+      }
+    }
+    if (!best) {
+      best = asset;
+    } else {
+      version = asset.version;
+      bestVersion = best.version;
+      if (versionIsNewer(version, bestVersion)) best = asset;
+    }
+  }
+  asset = bestMelody || best;
+  return {
+    tag: asset.tag,
+    name: asset.name,
+    url: asset.url,
+    prerelease: asset.prerelease
+  };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -223,6 +283,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports.normalizeVersionLabel = normalizeVersionLabel;
   module.exports.versionParts = versionParts;
   module.exports.versionsSame = versionsSame;
+  module.exports.versionSuffixRank = versionSuffixRank;
   module.exports.versionIsNewer = versionIsNewer;
   module.exports.downloadButtonState = downloadButtonState;
   module.exports.normalizeLocalModEntries = normalizeLocalModEntries;
