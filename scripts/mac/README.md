@@ -10,11 +10,11 @@ Player steps are on the repo homepage: [README.md](../../README.md) · [README_E
 
 ## 给玩家 / For players
 
-从 [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases) 下载附件 **`DuckovCoopPrepare-mac.zip`**，解压后双击 `DuckovCoopPrepare.app`。
+从 [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases) 下载附件 **`DuckovCoopPrepare-mac-1.5.0.zip`**，解压后双击 `DuckovCoopPrepare.app`。
 
 第一次若系统提示无法验证开发者：按住 Control 点按该 App，选择「打开」。不需要 Apple 开发者账号。
 
-Download **`DuckovCoopPrepare-mac.zip`** from [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases), unzip it, and double-click `DuckovCoopPrepare.app`.
+Download **`DuckovCoopPrepare-mac-1.5.0.zip`** from [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases), unzip it, and double-click `DuckovCoopPrepare.app`.
 
 If macOS says the developer cannot be verified, Control-click the app and choose Open. An Apple Developer account is not required.
 
@@ -113,11 +113,11 @@ scripts/mac/build-gui-app.sh
 会生成 / It writes:
 
 - `scripts/mac/dist/DuckovCoopPrepare.app`
-- `scripts/mac/dist/DuckovCoopPrepare-mac.zip`
+- `scripts/mac/dist/DuckovCoopPrepare-mac-1.5.0.zip`
 
-在 Mac 上，脚本会用本机 `codesign` 身份 `-` 给准备工具签名。Linux 上只能打包。把 **`DuckovCoopPrepare-mac.zip`** 上传到 GitHub Release。用户第一次打开下载的 App 时，仍可能需要 Control-点按 → 打开。
+在 Mac 上，脚本会用本机 `codesign` 身份 `-` 给准备工具签名。Linux 上只能打包。把 **`DuckovCoopPrepare-mac-1.5.0.zip`** 上传到 GitHub Release。用户第一次打开下载的 App 时，仍可能需要 Control-点按 → 打开。
 
-On a Mac the script signs the helper with the local `codesign` identity `-`. Linux can only pack the zip. Upload **`DuckovCoopPrepare-mac.zip`** to the GitHub Release. Players who download it may still need Control-click → Open the first time.
+On a Mac the script signs the helper with the local `codesign` identity `-`. Linux can only pack the zip. Upload **`DuckovCoopPrepare-mac-1.5.0.zip`** to the GitHub Release. Players who download it may still need Control-click → Open the first time.
 
 改过 `scripts/mac/gui/`、`prepare-duckov-coop-app.sh` 或 `sync-duckov-config.sh` 之后，重新运行打包脚本，并提交刷新后的 `dist/DuckovCoopPrepare.app`。
 

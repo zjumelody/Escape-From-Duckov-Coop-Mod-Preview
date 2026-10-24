@@ -16,7 +16,7 @@ The official / Steam `Duckov.app` uses App Sandbox and does not include the netw
 ### Recommended: the graphical helper (no Terminal)
 
 1. Open [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases).
-2. Download **`DuckovCoopPrepare-mac.zip`** from the asset list, unzip it, and double-click **`DuckovCoopPrepare.app`**. Use that asset. The Source code archive further down the page is the repository.
+2. Download **`DuckovCoopPrepare-mac-1.5.0.zip`** from the asset list, unzip it, and double-click **`DuckovCoopPrepare.app`**. Use that asset. The Source code archive further down the page is the repository.
 3. The first time you open it, macOS may say the developer cannot be verified. Control-click the app, choose Open, then choose Open again. If Open is not offered, use System Settings → Privacy & Security → Open Anyway. After that, a normal double-click is enough. An Apple Developer account is not required.
 
 The window title is 《逃离鸭科夫》Mac 联机 Mod 支持工具 (Escape from Duckov — Mac co-op Mod support tool). **Open GitHub** at the top-right is not a step: it opens this fork's Releases in the browser. The button is light green, distinct from the gray secondary buttons and from the Prepare button. Below it is a bordered panel titled **当前状态： / Current status:** in blue. The text there says what to do next. The three steps follow, each inside its own bordered box. A finished step's title turns green and gains a ✅.

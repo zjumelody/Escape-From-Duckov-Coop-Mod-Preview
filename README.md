@@ -16,7 +16,7 @@
 ### 推荐：图形工具（不用终端）
 
 1. 打开 [Releases](https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases)。
-2. 在附件里下载 **`DuckovCoopPrepare-mac.zip`**，解压后双击里面的 **`DuckovCoopPrepare.app`**。请用这个附件；页面下方名为 Source code 的压缩包是仓库源码。
+2. 在附件里下载 **`DuckovCoopPrepare-mac-1.5.0.zip`**，解压后双击里面的 **`DuckovCoopPrepare.app`**。请用这个附件；页面下方名为 Source code 的压缩包是仓库源码。
 3. 第一次打开时，macOS 可能会说无法验证开发者。按住 **Control** 点按这个 App，选择「打开」，再点「打开」。若菜单里没有「打开」，到「系统设置 → 隐私与安全性」里点「仍要打开」。这一次之后就可以直接双击。不需要 Apple 开发者账号。
 
 窗口标题是「《逃离鸭科夫》Mac 联机 Mod 支持工具」。右上角的「打开 GitHub 页面 / Open GitHub」不是步骤，它用浏览器打开本 Fork 的 Releases；这颗按钮是浅绿色。它下面是带边框的「当前状态： / Current status:」，蓝色标题，正文会告诉你下一步该做什么。再下面是三步，每一步都在自己的边框方框里。做完的步骤标题会变成绿色并加上 ✅。

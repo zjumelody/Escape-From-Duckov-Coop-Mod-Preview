@@ -54,8 +54,8 @@ Copy an official Duckov.app to a writable location, adjust entitlements on the c
 and re-sign that copy with the local codesign identity "-".
 
 推荐 / Recommended:
-  图形工具 DuckovCoopPrepare.app（Release 附件 DuckovCoopPrepare-mac.zip）。
-  The graphical app DuckovCoopPrepare.app (Release asset DuckovCoopPrepare-mac.zip).
+  图形工具 DuckovCoopPrepare.app（Release 附件 DuckovCoopPrepare-mac-1.5.0.zip）。
+  The graphical app DuckovCoopPrepare.app (Release asset DuckovCoopPrepare-mac-1.5.0.zip).
   本脚本是高级备用方式。 / This script is the advanced fallback.
 
 默认 / Defaults:

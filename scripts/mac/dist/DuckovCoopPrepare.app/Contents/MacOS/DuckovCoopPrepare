@@ -46,7 +46,7 @@ set -e
 if [[ "$status" -ne 0 ]]; then
   /usr/bin/osascript - "$LOG" <<'EOF' || true
 on run argv
-  display dialog "准备工具未能打开。请重新下载 DuckovCoopPrepare-mac.zip，解压后再试。" & return & "若系统拦截，请按住 Control 点按本应用并选择「打开」。" & return & return & "The prepare helper failed to open. Download DuckovCoopPrepare-mac.zip again, unzip it, and try once more." & return & "If macOS blocked it, Control-click this app and choose Open." & return & return & "Log: " & item 1 of argv buttons {"好 / OK"} default button 1
+  display dialog "准备工具未能打开。请重新下载 DuckovCoopPrepare-mac-1.5.0.zip，解压后再试。" & return & "若系统拦截，请按住 Control 点按本应用并选择「打开」。" & return & return & "The prepare helper failed to open. Download DuckovCoopPrepare-mac-1.5.0.zip again, unzip it, and try once more." & return & "If macOS blocked it, Control-click this app and choose Open." & return & return & "Log: " & item 1 of argv buttons {"好 / OK"} default button 1
 end run
 EOF
 fi
