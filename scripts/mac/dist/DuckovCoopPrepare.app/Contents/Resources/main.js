@@ -14,6 +14,8 @@ ObjC.import('Foundation');
 
 var RELEASES_PAGE = 'https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases';
 var RELEASES_API = 'https://api.github.com/repos/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases?per_page=100';
+var TOOL_VERSION = '1.5.0';
+var PREPARE_ZIP_NAME = 'DuckovCoopPrepare-mac-' + TOOL_VERSION + '.zip';
 
 var controller = null;
 var mainWindow = null;
@@ -998,7 +1000,7 @@ function runSync(argv) {
 
 function lookupAsset() {
   if (!shared || !shared.selectCoopModAsset) {
-    throw new Error('找不到版本匹配脚本。请重新下载 DuckovCoopPrepare-mac.zip。\nThe release matcher is missing. Download DuckovCoopPrepare-mac.zip again.');
+    throw new Error('找不到版本匹配脚本。请重新下载 ' + PREPARE_ZIP_NAME + '。\nThe release matcher is missing. Download ' + PREPARE_ZIP_NAME + ' again.');
   }
   var jsonPath = joinPath(tempDir(), 'duckov-releases.json');
   var result = runSync([
@@ -1568,7 +1570,7 @@ function onPrepare() {
   }
   var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
   if (!fileExists(script)) {
-    showAlert('找不到准备脚本 / Prepare script is missing', '请重新下载 DuckovCoopPrepare-mac.zip。\nDownload DuckovCoopPrepare-mac.zip again.\n\n' + script);
+    showAlert('找不到准备脚本 / Prepare script is missing', '请重新下载 ' + PREPARE_ZIP_NAME + '。\nDownload ' + PREPARE_ZIP_NAME + ' again.\n\n' + script);
     return;
   }
   var replacing = fileExists(dest);
@@ -1818,7 +1820,7 @@ function startInstallMod(modsPath) {
   }
   var script = joinPath(resources, 'prepare-duckov-coop-app.sh');
   if (!fileExists(script)) {
-    showAlert('找不到准备脚本 / Prepare script is missing', '请重新下载 DuckovCoopPrepare-mac.zip。\nDownload DuckovCoopPrepare-mac.zip again.\n\n' + script);
+    showAlert('找不到准备脚本 / Prepare script is missing', '请重新下载 ' + PREPARE_ZIP_NAME + '。\nDownload ' + PREPARE_ZIP_NAME + ' again.\n\n' + script);
     return;
   }
   setBusy(true);
@@ -2074,7 +2076,6 @@ function langToggleTitle() {
   return uiLang === 'en' ? '中文' : 'English';
 }
 
-var TOOL_VERSION = '1.5.0';
 
 function windowTitleText() {
   return L(
@@ -3867,7 +3868,7 @@ function startDedupe(version) {
     setBusy(false);
     showAlert(
       '找不到准备脚本 / Prepare script is missing',
-      '请重新下载 DuckovCoopPrepare-mac.zip。\nDownload DuckovCoopPrepare-mac.zip again.\n\n' + script
+      '请重新下载 ' + PREPARE_ZIP_NAME + '。\nDownload ' + PREPARE_ZIP_NAME + ' again.\n\n' + script
     );
     return;
   }

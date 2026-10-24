@@ -13,7 +13,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/DuckovCoopPrepare.app"
-ZIP="$DIST/DuckovCoopPrepare-mac.zip"
+# Zip name includes the tool version from Info.plist (CFBundleShortVersionString), e.g. DuckovCoopPrepare-mac-1.5.0.zip
+TOOL_VERSION="$(
+  if command -v plutil >/dev/null 2>&1; then
+    plutil -extract CFBundleShortVersionString raw "$ROOT/gui/Info.plist" 2>/dev/null || true
+  fi
+)"
+if [[ -z "${TOOL_VERSION}" ]]; then
+  TOOL_VERSION="$(
+    python3 - "$ROOT/gui/Info.plist" <<'PYV'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>", text)
+print(m.group(1).strip() if m else "")
+PYV
+  )"
+fi
+[[ -n "${TOOL_VERSION}" ]] || { echo "Could not read CFBundleShortVersionString from gui/Info.plist" >&2; exit 1; }
+ZIP="$DIST/DuckovCoopPrepare-mac-${TOOL_VERSION}.zip"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/duckov-coop-gui.XXXXXX")"
 cleanup() { rm -rf "$STAGE"; }
 trap cleanup EXIT
@@ -71,7 +88,7 @@ else
   printf '%s\n' 'Run this script once on a Mac before uploading the Release asset.'
 fi
 
-rm -f "$ZIP"
+rm -f "$ZIP" "$DIST/DuckovCoopPrepare-mac.zip"
 (
   cd "$STAGE"
   zip -r -y -X "$ZIP" "DuckovCoopPrepare.app"
