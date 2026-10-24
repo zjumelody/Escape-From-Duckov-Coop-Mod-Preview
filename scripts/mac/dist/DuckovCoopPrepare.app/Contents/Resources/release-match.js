@@ -47,7 +47,7 @@ function versionFromTag(tag) {
   return text;
 }
 
-// Prefer the version written into the asset file name (EscapeFromDuckovCoopMod.V1.4.2-test.zip).
+// Prefer the version written into the asset file name (EscapeFromDuckovCoopMod.V1.4.2_melody.zip).
 // Fall back to the release tag. Used to skip a download when that same package is already installed.
 function releaseAssetVersionLabel(name, tag) {
   var fromName = versionFromAssetName(name);
@@ -57,7 +57,7 @@ function releaseAssetVersionLabel(name, tag) {
 
 // Same rules as prepare-duckov-coop-app.sh normalize_version_label / version_parts /
 // versions_same / version_is_newer. The numeric triple decides "newer". The suffix
-// stays part of the label, so 1.4.2 and 1.4.2-test are not the same package.
+// stays part of the label, so 1.4.2, 1.4.2-test, and 1.4.2_melody are not the same package.
 function normalizeVersionLabel(text) {
   var value = String(text == null ? '' : text).toLowerCase().replace(/[ \t]/g, '');
   if (value.charAt(0) === 'v') value = value.substring(1);
@@ -100,23 +100,85 @@ function versionIsNewer(left, right) {
   return false;
 }
 
-// idle: nothing installed (blue). ready: installed label matches the release, or every
-// installed label is numerically newer (green, do not download an older zip).
-// outdated: a local mod exists and it is not that release (yellow).
-// remoteKnown false keeps idle so the button is not painted green or yellow before the check.
-function downloadButtonState(localVersions, remoteVersion, remoteKnown) {
-  if (!localVersions || typeof localVersions.length !== 'number' || localVersions.length === 0) return 'idle';
+// Normalize list entries to { version, channel }. Accepts legacy string[] of versions
+// (treated as channel "-"/原版) or objects with version/channel.
+function normalizeLocalModEntries(localMods) {
+  var out = [];
+  var i;
+  var item;
+  var version;
+  var channel;
+  if (!localMods || typeof localMods.length !== 'number') return out;
+  for (i = 0; i < localMods.length; i++) {
+    item = localMods[i];
+    if (item == null) continue;
+    if (typeof item === 'string' || typeof item === 'number') {
+      version = String(item);
+      channel = '-';
+    } else {
+      version = item.version != null ? String(item.version) : '';
+      channel = item.channel != null ? String(item.channel) : '-';
+    }
+    channel = String(channel || '').toLowerCase().replace(/[ \t]/g, '');
+    if (channel !== 'melody-fork') channel = '-';
+    out.push({ version: version, channel: channel });
+  }
+  return out;
+}
+
+function isMelodyForkChannel(channel) {
+  return String(channel || '').toLowerCase().replace(/[ \t]/g, '') === 'melody-fork';
+}
+
+// idle: no coop mod (blue).
+// upstream: has coop family but NOT melody-fork (原版) → yellow.
+// outdated: has melody-fork but version ≠ latest Release → cyan.
+// ready: has melody-fork and matches/newer than latest → green.
+// remoteKnown false: keep idle unless only upstream is present (still yellow).
+function downloadButtonState(localMods, remoteVersion, remoteKnown) {
+  var mods = normalizeLocalModEntries(localMods);
+  if (!mods.length) return 'idle';
+  var i;
+  var forkMods = [];
+  var hasUpstream = false;
+  for (i = 0; i < mods.length; i++) {
+    if (isMelodyForkChannel(mods[i].channel)) forkMods.push(mods[i]);
+    else hasUpstream = true;
+  }
+  if (forkMods.length === 0) {
+    // 原版 only (or unknown channel) → yellow even before Release check finishes.
+    return hasUpstream ? 'upstream' : 'idle';
+  }
   if (!remoteKnown) return 'idle';
   var remote = normalizeVersionLabel(remoteVersion);
   if (!remote) return 'idle';
-  var i;
   var allNewer = true;
-  for (i = 0; i < localVersions.length; i++) {
-    if (versionsSame(localVersions[i], remoteVersion)) return 'ready';
-    if (!versionIsNewer(localVersions[i], remoteVersion)) allNewer = false;
+  for (i = 0; i < forkMods.length; i++) {
+    if (versionsSame(forkMods[i].version, remoteVersion)) return 'ready';
+    if (!versionIsNewer(forkMods[i].version, remoteVersion)) allNewer = false;
   }
   if (allNewer) return 'ready';
   return 'outdated';
+}
+
+function pickInstalledVersionLabel(localMods, preferMelody) {
+  var mods = normalizeLocalModEntries(localMods);
+  var i;
+  var firstUpstream = '';
+  for (i = 0; i < mods.length; i++) {
+    if (preferMelody && isMelodyForkChannel(mods[i].channel)) {
+      return mods[i].version || '-';
+    }
+    if (!firstUpstream && !isMelodyForkChannel(mods[i].channel)) {
+      firstUpstream = mods[i].version || '-';
+    }
+  }
+  if (preferMelody) {
+    for (i = 0; i < mods.length; i++) {
+      if (isMelodyForkChannel(mods[i].channel)) return mods[i].version || '-';
+    }
+  }
+  return firstUpstream || (mods.length ? (mods[0].version || '-') : '-');
 }
 
 function selectCoopModAsset(releases) {
@@ -163,4 +225,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports.versionsSame = versionsSame;
   module.exports.versionIsNewer = versionIsNewer;
   module.exports.downloadButtonState = downloadButtonState;
+  module.exports.normalizeLocalModEntries = normalizeLocalModEntries;
+  module.exports.isMelodyForkChannel = isMelodyForkChannel;
+  module.exports.pickInstalledVersionLabel = pickInstalledVersionLabel;
 }

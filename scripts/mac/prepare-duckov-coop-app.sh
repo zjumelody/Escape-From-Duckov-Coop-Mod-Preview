@@ -495,6 +495,103 @@ ini_version_label() {
   return 0
 }
 
+# channel=melody-fork ⇒ Melody's Mac fork. Missing/other ⇒ 原版 (upstream/workshop).
+# channel=melody-fork means Melody's Mac fork. Anything else (or missing) is 原版.
+ini_channel_label() {
+  local ini="$1"
+  local line key val
+  [[ -f "$ini" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(printf '%s' "$key" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
+    val="$(printf '%s' "$val" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/^"//;s/"$//')"
+    if [[ "$key" == "channel" ]]; then
+      val="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]' | tr -d ' \t')"
+      if [[ "$val" == "melody-fork" ]]; then
+        printf '%s\n' "melody-fork"
+      fi
+      return 0
+    fi
+  done <"$ini"
+  return 0
+}
+
+package_channel_label() {
+  local dir="$1"
+  local ch file
+  [[ -d "$dir" ]] || return 0
+  ch="$(ini_channel_label "$dir/info.ini")"
+  if [[ -n "$ch" ]]; then
+    printf '%s\n' "$ch"
+    return 0
+  fi
+  for file in "$dir"/*/info.ini; do
+    [[ -f "$file" ]] || continue
+    ch="$(ini_channel_label "$file")"
+    if [[ -n "$ch" ]]; then
+      printf '%s\n' "$ch"
+      return 0
+    fi
+  done
+  return 0
+}
+
+is_melody_fork_package() {
+  local dir="$1"
+  local ch
+  ch="$(package_channel_label "$dir")"
+  [[ "$ch" == "melody-fork" ]]
+}
+
+# Install folder for Melody's Mac fork: 3591341282_EscapeFromDuckovCoopMod_{version}
+# Example: 3591341282_EscapeFromDuckovCoopMod_1.4.2_melody (no literal "v" prefix).
+ensure_melody_fork_channel() {
+  local dir="$1"
+  local ini="$dir/info.ini"
+  local tmp line key found=0
+  [[ -d "$dir" ]] || return 0
+  if [[ ! -f "$ini" ]]; then
+    printf '%s\n' \
+      'name = EscapeFromDuckovCoopMod' \
+      'publishedFileId = 3591341282' \
+      'channel = melody-fork' \
+      'version = ?' >"$ini"
+    return 0
+  fi
+  tmp="$ini.melody-channel.tmp"
+  : >"$tmp"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    if [[ "$line" == *=* ]]; then
+      key="${line%%=*}"
+      key="$(printf '%s' "$key" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
+      if [[ "$key" == "channel" ]]; then
+        printf '%s\n' 'channel = melody-fork' >>"$tmp"
+        found=1
+        continue
+      fi
+    fi
+    printf '%s\n' "$line" >>"$tmp"
+  done <"$ini"
+  if [[ "$found" -eq 0 ]]; then
+    printf '%s\n' 'channel = melody-fork' >>"$tmp"
+  fi
+  mv "$tmp" "$ini"
+}
+
+coop_install_dir_name() {
+  local ver="$1"
+  local safe
+  safe="$(printf '%s' "$ver" | tr -d '/\\:\0' | tr ' ' '_')"
+  safe="$(normalize_version_label "$safe")"
+  [[ -n "$safe" ]] || safe="unknown"
+  printf '%s\n' "3591341282_EscapeFromDuckovCoopMod_${safe}"
+}
+
+
 dir_has_coop_dll() {
   local dir="$1"
   local file base
@@ -765,7 +862,11 @@ remove_tree_in_dest_mods() {
         "Refusing to delete an unexpected path: ${target}"
       ;;
   esac
-  rm -rf "$target"
+  rm -rf "$target" || return 1
+  if [[ -e "$target" ]]; then
+    return 1
+  fi
+  return 0
 }
 
 note_original_coop_mods() {
@@ -787,25 +888,58 @@ note_original_coop_mods() {
   done
   if [[ "$found" -eq 1 ]]; then
     note \
-      "副本里只会留下一份即将安装的联机 Mod，不会和原版那份并排各留一份。" \
-      "The copy will keep a single co-op Mod package, not the original package beside the one being installed."
+      "副本里只会留下一份即将安装的联机 Mod，不会和原版或其他旧联机 Mod 并排各留一份。" \
+      "The copy will keep a single co-op Mod package, not the original or other older packages beside the one being installed."
   fi
 }
 
-purge_coop_family_in_dest() {
+# After a successful new install, remove EVERY other coop-family folder:
+# 原版/workshop AND older melody-fork. They must not coexist.
+# keep_path is the newly installed folder to retain.
+purge_other_coop_family_in_dest() {
+  local keep_path="$1"
   local child
+  local failed=0
+  local failed_names=""
   REMOVED_COOP_COUNT=0
   [[ -d "$DEST/Contents/Mods" ]] || return 0
   for child in "$DEST/Contents/Mods"/*; do
     [[ -d "$child" ]] || continue
-    if is_coop_package "$child"; then
-      note \
-        "已从副本移除同属联机 Mod 的旧目录，避免多份并存：$(basename "$child")" \
-        "Removed an older co-op Mod folder from the copy so only one remains: $(basename "$child")"
-      remove_tree_in_dest_mods "$child"
+    if [[ -n "$keep_path" && "$child" == "$keep_path" ]]; then
+      continue
+    fi
+    if ! is_coop_package "$child"; then
+      continue
+    fi
+    note \
+      "已从副本移除同属联机 Mod 的旧目录，避免多份并存：$(basename "$child")" \
+      "Removed an older co-op Mod folder from the copy so only one remains: $(basename "$child")"
+    if ! remove_tree_in_dest_mods "$child"; then
+      failed=1
+      if [[ -n "$failed_names" ]]; then
+        failed_names="${failed_names}, $(basename "$child")"
+      else
+        failed_names="$(basename "$child")"
+      fi
+    else
       REMOVED_COOP_COUNT=$((REMOVED_COOP_COUNT + 1))
     fi
   done
+  if [[ "$failed" -eq 1 ]]; then
+    die \
+      "删除旧联机 Mod 失败。副本 Mods 里现在有多份同样的联机 Mod，请手动删除多余的一份后再试：${failed_names}" \
+      "Failed to remove an older co-op Mod. Multiple copies of the same co-op Mod are now in the copy's Mods folder. Delete the extra one manually, then try again: ${failed_names}"
+  fi
+}
+
+# Alias used by install_selected_packages (name kept stable across Melody's reversals).
+purge_old_melody_fork_in_dest() {
+  purge_other_coop_family_in_dest "$@"
+}
+
+purge_coop_family_in_dest() {
+  # No keep_path — remove all coop-family folders (pre-install legacy path).
+  purge_other_coop_family_in_dest ""
 }
 
 stage_list_outside_dest() {
@@ -861,41 +995,69 @@ install_selected_packages() {
   local ready="$TMP_WORK/ready-list"
   local others="$TMP_WORK/others-list"
   local incoming_ver
+  local skip_coop=0
   SKIPPED_SAME_VERSION=0
   REMOVED_COOP_COUNT=0
+  LAST_INSTALLED_COOP_PATH=""
   filter_to_one_coop_family "$list" "$filtered"
   stage_list_outside_dest "$filtered" "$ready" "$root" "$fallback"
   if list_contains_coop_package "$ready"; then
     incoming_ver="$(incoming_coop_version "$ready")"
     scan_dest_coop_packages
-    if [[ "${ALLOW_SKIP_SAME:-0}" -eq 1 && "${EXISTING_COOP_COUNT:-0}" -eq 1 ]] && versions_same "$incoming_ver" "$EXISTING_COOP_VERSION"; then
-      drop_coop_packages "$ready" "$others"
-      if [[ ! -s "$others" ]]; then
-        SKIPPED_SAME_VERSION=1
-        note \
-          "副本里已经是这个联机 Mod 版本，无需重新安装：${EXISTING_COOP_VERSION}" \
-          "The copy already has this co-op Mod version. Reinstall was skipped: ${EXISTING_COOP_VERSION}"
-        note "COOP_MOD_RESULT skipped-same-version"
-        return 0
+    # Skip only when exactly one melody-fork with the same version is already installed.
+    # 仅当已有恰好一份同版本的 melody-fork 时跳过；原版可与 fork 并存。
+    if [[ "${ALLOW_SKIP_SAME:-0}" -eq 1 && -n "$incoming_ver" ]]; then
+      local melody_same=0
+      local child
+      if [[ -d "$DEST/Contents/Mods" ]]; then
+        for child in "$DEST/Contents/Mods"/*; do
+          [[ -d "$child" ]] || continue
+          is_coop_package "$child" || continue
+          is_melody_fork_package "$child" || continue
+          if versions_same "$(package_version_label "$child")" "$incoming_ver"; then
+            melody_same=$((melody_same + 1))
+          fi
+        done
       fi
-      ready="$others"
+      if [[ "$melody_same" -eq 1 ]]; then
+        drop_coop_packages "$ready" "$others"
+        if [[ ! -s "$others" ]]; then
+          SKIPPED_SAME_VERSION=1
+          note \
+            "副本里已经是这个联机 Mod 版本，无需重新安装：${incoming_ver}" \
+            "The copy already has this co-op Mod version. Reinstall was skipped: ${incoming_ver}"
+          note "COOP_MOD_RESULT skipped-same-version"
+          return 0
+        fi
+        ready="$others"
+      else
+        note_original_coop_mods
+      fi
     else
       note_original_coop_mods
-      purge_coop_family_in_dest
     fi
   fi
+  # Install the new package first, then remove older melody-fork folders only.
+  # 先装新版本，再只删旧的 melody-fork；原版联机 Mod 一律保留。
   install_packages "$ready" "$root" "$fallback"
   if list_contains_coop_package "$ready"; then
+    if [[ -n "${LAST_INSTALLED_COOP_PATH:-}" ]]; then
+      purge_old_melody_fork_in_dest "$LAST_INSTALLED_COOP_PATH"
+    fi
     note "COOP_MOD_RESULT updated"
   fi
 }
 
 emit_coop_package_line() {
   local dir="$1"
-  local ver
+  local ver ch
   ver="$(package_version_label "$dir")"
   [[ -n "$ver" ]] || ver="-"
-  printf 'COOP_MOD\t%s\t%s\n' "$ver" "$dir"
+  ch="$(package_channel_label "$dir")"
+  [[ -n "$ch" ]] || ch="-"
+  # COOP_MOD \t version \t channel \t path
+  # channel=melody-fork for Melody's Mac fork; "-" means 原版 (missing/other).
+  printf 'COOP_MOD\t%s\t%s\t%s\n' "$ver" "$ch" "$dir"
 }
 
 emit_coop_packages() {
@@ -916,6 +1078,7 @@ emit_coop_packages() {
   done
 }
 
+# Dedupe among ALL coop-family folders (原版/workshop and melody-fork). Keep one.
 dedupe_dest_coop_packages() {
   local keep_version="$1"
   local child ver score best best_ver best_score
@@ -964,7 +1127,11 @@ dedupe_dest_coop_packages() {
     note \
       "已从副本移除同属联机 Mod 的旧目录，避免多份并存：$(basename "$child")" \
       "Removed an older co-op Mod folder from the copy so only one remains: $(basename "$child")"
-    remove_tree_in_dest_mods "$child"
+    if ! remove_tree_in_dest_mods "$child"; then
+      die \
+        "删除旧联机 Mod 失败。副本 Mods 里现在有多份同样的联机 Mod，请手动删除多余的一份后再试：$(basename "$child")" \
+        "Failed to remove an older co-op Mod. Multiple copies of the same co-op Mod are now in the copy's Mods folder. Delete the extra one manually, then try again: $(basename "$child")"
+    fi
     REMOVED_COOP_COUNT=$((REMOVED_COOP_COUNT + 1))
   done
 }
@@ -973,12 +1140,15 @@ install_packages() {
   local list="$1"
   local root="$2"
   local fallback_name="$3"
-  local pkg name dest_mods
+  local pkg name dest_mods ver
   dest_mods="$DEST/Contents/Mods"
   mkdir -p "$dest_mods"
   while IFS= read -r pkg; do
     [[ -n "$pkg" ]] || continue
-    if [[ "$pkg" == "$root" ]]; then
+    if is_coop_package "$pkg"; then
+      ver="$(package_version_label "$pkg")"
+      name="$(coop_install_dir_name "$ver")"
+    elif [[ "$pkg" == "$root" ]]; then
       name="$fallback_name"
     else
       name="$(basename "$pkg")"
@@ -990,6 +1160,10 @@ install_packages() {
     fi
     rm -rf "${dest_mods}/${name}"
     copy_tree "$pkg" "${dest_mods}/${name}"
+    if is_coop_package "$pkg"; then
+      ensure_melody_fork_channel "${dest_mods}/${name}"
+      LAST_INSTALLED_COOP_PATH="${dest_mods}/${name}"
+    fi
     note "已安装 Mod / Installed mod: ${name}"
     INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
   done <"$list"
@@ -1242,9 +1416,6 @@ update_mods_only() {
   local chosen mods_root
   if [[ "${DUCKOV_PREPARE_SKIP_PLATFORM:-}" != "1" ]]; then
     require_macos
-    command -v codesign >/dev/null 2>&1 || die \
-      "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
-      "codesign was not found. It ships with macOS; an Apple Developer account is not required."
   fi
   command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
 
@@ -1293,15 +1464,17 @@ update_mods_only() {
   install_selected_packages "$chosen" "$mods_root" "$(basename "$mods_root")"
   if [[ "${SKIPPED_SAME_VERSION:-0}" -eq 1 ]]; then
     note \
-      "未覆盖文件，也没有重新签名。 / Files were not overwritten, and the copy was not signed again."
+      "未覆盖文件。Mods 目录可写，安装后不再对副本或 Mod 重新签名。" \
+      "Files were not overwritten. Mods is user-writable; the copy and Mod are not re-signed after install."
     return 0
   fi
   if command -v xattr >/dev/null 2>&1; then
     xattr -dr com.apple.quarantine "$DEST/Contents/Mods" || true
   fi
-  sign_dest
+  # Mods is user-writable — do not re-sign the copy or the installed Mod after update.
+  # Mods 目录本就可写，更新联机 Mod 后不再对副本或 Mod 重新签名。
   note \
-    "Mac 联机 Mod 已更新到副本。 / The Mac co-op Mod was updated into the copy." \
+    "Mac 联机 Mod 已更新到副本（未重新签名）。 / The Mac co-op Mod was updated into the copy (not re-signed)." \
     "副本 / Copy: ${DEST}" \
     "本次已装入 ${INSTALLED_COUNT} 个 Mod 目录，来源：${USED_MODS_LABEL}" \
     "Installed ${INSTALLED_COUNT} mod folder(s) from: ${USED_MODS_LABEL}"
@@ -1425,8 +1598,8 @@ main() {
     "3. 从本 Fork 的 Releases 下载联机 Mod（以及需要的依赖 Mod），放入副本的 Contents/Mods/。" \
     "   Download the co-op mod (and any dependency mods) from this fork's Releases into the copy's Contents/Mods/." \
     "   https://github.com/zjumelody/Escape-From-Duckov-Coop-Mod-Preview/releases" \
-    "4. 所有玩家的 ModVersion 字符串必须完全一致（Windows 与 Mac 共用，例如 Release 中的 1.4.2）。" \
-    "   Every peer must use the exact same ModVersion string (shared by Windows and Mac, for example 1.4.2 from Releases)." \
+    "4. 所有玩家的 ModVersion 字符串必须完全一致（Windows 与 Mac 共用，例如 Release 中的 1.4.2_melody）。" \
+    "   Every peer must use the exact same ModVersion string (shared by Windows and Mac, for example 1.4.2_melody from Releases)." \
     "5. Steam「验证游戏完整性」之后，如果副本异常，请重新运行本脚本。" \
     "   After Steam \"Verify integrity\", run this script again if the copy misbehaves." \
     "6. 若之后又手动放入 Mods，请再运行一次本脚本，以便重新签名。" \
@@ -1463,9 +1636,6 @@ cmd_list_coop_mods() {
 cmd_dedupe_coop_mods() {
   if [[ "${DUCKOV_PREPARE_SKIP_PLATFORM:-}" != "1" ]]; then
     require_macos
-    command -v codesign >/dev/null 2>&1 || die \
-      "找不到 codesign。这是 macOS 自带工具，不需要 Apple 开发者账号。" \
-      "codesign was not found. It ships with macOS; an Apple Developer account is not required."
   fi
   command -v find >/dev/null 2>&1 || die "找不到 find。 / find was not found."
   [[ -n "${HOME:-}" ]] || die "HOME 未设置。 / HOME is not set."
@@ -1503,7 +1673,7 @@ cmd_dedupe_coop_mods() {
   if command -v xattr >/dev/null 2>&1; then
     xattr -dr com.apple.quarantine "$DEST/Contents/Mods" || true
   fi
-  sign_dest
+  # No re-sign after Mods cleanup.
 }
 
 run_self_test() {
@@ -1574,6 +1744,18 @@ run_self_test() {
   if versions_same "1.4.2" "1.4.2-test"; then
     die "self-test: 1.4.2 and 1.4.2-test should not match"
   fi
+  version_is_newer "1.4.2_melody" "1.4.1" || die "self-test: 1.4.2_melody should be newer than 1.4.1"
+  versions_same "V1.4.2_melody" "1.4.2_melody" || die "self-test: _melody version labels should match"
+  if versions_same "1.4.2" "1.4.2_melody"; then
+    die "self-test: 1.4.2 and 1.4.2_melody should not match"
+  fi
+  if versions_same "1.4.2-test" "1.4.2_melody"; then
+    die "self-test: 1.4.2-test and 1.4.2_melody should not match"
+  fi
+  if version_is_newer "1.4.2_melody" "1.4.2-test"; then
+    die "self-test: same numeric base _melody should not be newer than -test"
+  fi
+  [[ "$(coop_install_dir_name "1.4.2_melody")" == "3591341282_EscapeFromDuckovCoopMod_1.4.2_melody" ]] || die "self-test: _melody install dir name wrong"
   if versions_same "" ""; then
     die "self-test: empty versions should not count as the same"
   fi
@@ -1588,7 +1770,7 @@ run_self_test() {
 
   incoming="$root/incoming"
   mkdir -p "$incoming/EscapeFromDuckovCoopMod" "$incoming/BackpackExpansion" "$incoming/3591341282"
-  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'version = ?' >"$incoming/EscapeFromDuckovCoopMod/info.ini"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'version = ?' 'channel = melody-fork' >"$incoming/EscapeFromDuckovCoopMod/info.ini"
   printf '%s\n' 'new-melody' >"$incoming/EscapeFromDuckovCoopMod/EscapeFromDuckovCoopMod.dll"
   printf '%s\n' 'x' >"$incoming/EscapeFromDuckovCoopMod/INSTALL_1.4.2-test.txt"
   printf '%s\n' 'backpack-new' >"$incoming/BackpackExpansion/BackpackExpansion.dll"
@@ -1596,16 +1778,24 @@ run_self_test() {
   printf '%s\n' 'older-incoming' >"$incoming/3591341282/EscapeFromDuckovCoopMod.dll"
   printf '%s\n' 'x' >"$incoming/3591341282/INSTALL_1.4.1.txt"
   [[ "$(package_version_label "$incoming/EscapeFromDuckovCoopMod")" == "1.4.2-test" ]] || die "self-test: INSTALL file version was not preferred"
+  [[ "$(coop_install_dir_name "1.4.2-test")" == "3591341282_EscapeFromDuckovCoopMod_1.4.2-test" ]] || die "self-test: install dir name wrong"
+  [[ "$(coop_install_dir_name "V1.4.2")" == "3591341282_EscapeFromDuckovCoopMod_1.4.2" ]] || die "self-test: install dir name should strip v"
+  [[ "$(ini_channel_label "$incoming/EscapeFromDuckovCoopMod/info.ini")" == "melody-fork" ]] || die "self-test: channel parse failed"
+  [[ -z "$(ini_channel_label "$mods/3591341282/info.ini")" ]] || die "self-test: workshop should have empty channel"
 
   chosen="$root/chosen-packages"
   printf '%s\n' "$incoming/EscapeFromDuckovCoopMod" "$incoming/BackpackExpansion" "$incoming/3591341282" >"$chosen"
   ALLOW_SKIP_SAME=0
   install_selected_packages "$chosen" "$incoming" "incoming"
 
-  [[ ! -d "$mods/3591341282" ]] || die "self-test: workshop folder remained in the copy"
-  [[ ! -d "$mods/WeirdName" ]] || die "self-test: info.ini duplicate remained in the copy"
-  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: new co-op package was not installed"
-  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/EscapeFromDuckovCoopMod.dll")" == "new-melody" ]] || die "self-test: new dll was not installed"
+  installed_name="3591341282_EscapeFromDuckovCoopMod_1.4.2-test"
+  # After install: 原版/workshop AND older coop-family folders must be gone; only the new fork remains.
+  [[ ! -d "$mods/3591341282" ]] || die "self-test: workshop 原版 remained after install"
+  [[ ! -d "$mods/WeirdName" ]] || die "self-test: WeirdName coop folder remained after install"
+  [[ ! -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: bare EscapeFromDuckovCoopMod remained after install"
+  [[ -d "$mods/$installed_name" ]] || die "self-test: new versioned co-op package was not installed"
+  [[ "$(cat "$mods/$installed_name/EscapeFromDuckovCoopMod.dll")" == "new-melody" ]] || die "self-test: new dll was not installed"
+  grep -F -q 'channel = melody-fork' "$mods/$installed_name/info.ini" || die "self-test: installed mod missing channel stamp"
   [[ "$(cat "$mods/BackpackExpansion/BackpackExpansion.dll")" == "backpack-new" ]] || die "self-test: backpack was not updated"
   [[ "$(cat "$mods/NiceBackpack/NiceBackpack.dll")" == "nice" ]] || die "self-test: unrelated mod was changed"
   [[ -f "$mods/ApiOnly/EscapeFromDuckovModApi.dll" ]] || die "self-test: ModApi-only folder was deleted"
@@ -1618,33 +1808,47 @@ run_self_test() {
       count=$((count + 1))
     fi
   done
-  [[ "$count" -eq 1 ]] || die "self-test: expected one co-op package, found ${count}"
+  [[ "$count" -eq 1 ]] || die "self-test: expected one co-op package after install, found ${count}"
 
-  printf '%s\n' 'marker' >"$mods/EscapeFromDuckovCoopMod/marker.txt"
+  printf '%s\n' 'marker' >"$mods/$installed_name/marker.txt"
   printf '%s\n' "$incoming/EscapeFromDuckovCoopMod" >"$chosen"
   ALLOW_SKIP_SAME=1
   SKIPPED_SAME_VERSION=0
   install_selected_packages "$chosen" "$incoming" "incoming"
   [[ "${SKIPPED_SAME_VERSION}" -eq 1 ]] || die "self-test: same version was installed again"
-  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/marker.txt")" == "marker" ]] || die "self-test: same-version skip replaced the installed mod"
+  [[ "$(cat "$mods/$installed_name/marker.txt")" == "marker" ]] || die "self-test: same-version skip replaced the installed mod"
 
-  mkdir -p "$mods/3591341282"
+  # Seed an older melody-fork + a workshop 原版; dedupe keep-version removes both extras.
+  mkdir -p "$mods/3591341282_EscapeFromDuckovCoopMod_1.4.1" "$mods/3591341282"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'channel = melody-fork' >"$mods/3591341282_EscapeFromDuckovCoopMod_1.4.1/info.ini"
+  printf '%s\n' 'stale-fork' >"$mods/3591341282_EscapeFromDuckovCoopMod_1.4.1/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'x' >"$mods/3591341282_EscapeFromDuckovCoopMod_1.4.1/INSTALL_1.4.1.txt"
   printf '%s\n' 'publishedFileId = 3591341282' >"$mods/3591341282/info.ini"
-  printf '%s\n' 'stale' >"$mods/3591341282/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'stale-workshop' >"$mods/3591341282/EscapeFromDuckovCoopMod.dll"
   dedupe_dest_coop_packages "1.4.2-test"
-  [[ ! -d "$mods/3591341282" ]] || die "self-test: dedupe left the older workshop folder"
-  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: dedupe removed the version to keep"
+  [[ ! -d "$mods/3591341282_EscapeFromDuckovCoopMod_1.4.1" ]] || die "self-test: dedupe left the older melody-fork"
+  [[ ! -d "$mods/3591341282" ]] || die "self-test: dedupe left workshop 原版"
+  [[ -d "$mods/$installed_name" ]] || die "self-test: dedupe removed the version to keep"
   [[ "$(cat "$mods/NiceBackpack/NiceBackpack.dll")" == "nice" ]] || die "self-test: dedupe removed an unrelated mod"
   [[ "${REMOVED_COOP_COUNT}" -ge 1 ]] || die "self-test: dedupe removed nothing"
 
   list_out="$("$bash_bin" "$0" --list-coop-mods --mods-dir "$mods")"
-  expected="COOP_MOD"$'\t'"1.4.2-test"$'\t'"$mods/EscapeFromDuckovCoopMod"
+  expected="COOP_MOD"$'\t'"1.4.2-test"$'\t'"melody-fork"$'\t'"$mods/$installed_name"
   printf '%s\n' "$list_out" | grep -F -q "$expected" || die "self-test: list output missing the installed mod: ${list_out}"
   if printf '%s\n' "$list_out" | grep -F -q "NiceBackpack"; then
     die "self-test: list included an unrelated mod: ${list_out}"
   fi
   if printf '%s\n' "$list_out" | grep -F -q "BackpackExpansion"; then
     die "self-test: list included the backpack: ${list_out}"
+  fi
+  if printf '%s\n' "$list_out" | grep -F -q "$mods/3591341282"$'	'; then
+    die "self-test: list still shows workshop after dedupe: ${list_out}"
+  fi
+  if printf '%s\n' "$list_out" | grep -E -q $'COOP_MOD\t[^\t]+\t-\t'; then
+    die "self-test: list still shows a 原版 (channel -) after dedupe: ${list_out}"
+  fi
+  if [[ -d "$mods/3591341282" ]]; then
+    die "self-test: workshop folder still on disk after dedupe"
   fi
 
   DUCKOV_PREPARE_SKIP_PLATFORM=1 DUCKOV_PREPARE_SKIP_SIGN=1 \
@@ -1656,15 +1860,43 @@ run_self_test() {
     "$bash_bin" "$0" --dedupe-coop-mods --dest "$DEST" --keep-version "9.9.9"; then
     die "self-test: missing keep-version was accepted"
   fi
-  [[ -d "$mods/EscapeFromDuckovCoopMod" ]] || die "self-test: failed keep-version deleted the co-op mod"
+  [[ -d "$mods/$installed_name" ]] || die "self-test: failed keep-version deleted the co-op mod"
   [[ "$(cat "$orig/EscapeFromDuckovCoopMod.dll")" == "workshop-original" ]] || die "self-test: failed keep-version changed the original app"
 
-  printf '%s\n' 'marker' >"$mods/EscapeFromDuckovCoopMod/marker.txt"
+  printf '%s\n' 'marker' >"$mods/$installed_name/marker.txt"
   DUCKOV_PREPARE_SKIP_PLATFORM=1 DUCKOV_PREPARE_SKIP_SIGN=1 \
     "$bash_bin" "$0" --update-mods --dest "$DEST" --source "$SOURCE" --mods-dir "$incoming/EscapeFromDuckovCoopMod" >"$root/update-out.txt"
   grep -F -q "COOP_MOD_RESULT skipped-same-version" "$root/update-out.txt" || die "self-test: update did not skip the same version: $(cat "$root/update-out.txt")"
-  [[ "$(cat "$mods/EscapeFromDuckovCoopMod/marker.txt")" == "marker" ]] || die "self-test: update skip replaced the installed mod"
+  [[ "$(cat "$mods/$installed_name/marker.txt")" == "marker" ]] || die "self-test: update skip replaced the installed mod"
   [[ "$(cat "$orig/EscapeFromDuckovCoopMod.dll")" == "workshop-original" ]] || die "self-test: update changed the original app"
+  if grep -E -q 'codesign|--sign' "$root/update-out.txt"; then
+    die "self-test: update-mods should not codesign the copy or mod"
+  fi
+
+  # Installing a newer melody-fork must not delete 原版; must remove older melody-fork only.
+  mkdir -p "$incoming/newer"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'channel = melody-fork' >"$incoming/newer/info.ini"
+  printf '%s\n' 'newer-dll' >"$incoming/newer/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'x' >"$incoming/newer/INSTALL_1.4.3.txt"
+  printf '%s\n' "$incoming/newer" >"$chosen"
+  ALLOW_SKIP_SAME=0
+  install_selected_packages "$chosen" "$incoming" "incoming"
+  [[ -d "$mods/3591341282_EscapeFromDuckovCoopMod_1.4.3" ]] || die "self-test: newer fork not installed"
+  [[ ! -d "$mods/$installed_name" ]] || die "self-test: older melody-fork remained after newer install"
+  # Re-seed a 原版 and confirm a subsequent install removes it.
+  mkdir -p "$mods/3591341282"
+  printf '%s\n' 'publishedFileId = 3591341282' >"$mods/3591341282/info.ini"
+  printf '%s\n' 'workshop-again' >"$mods/3591341282/EscapeFromDuckovCoopMod.dll"
+  mkdir -p "$incoming/newer2"
+  printf '%s\n' 'name = EscapeFromDuckovCoopMod' 'publishedFileId = 3591341282' 'channel = melody-fork' >"$incoming/newer2/info.ini"
+  printf '%s\n' 'newer2-dll' >"$incoming/newer2/EscapeFromDuckovCoopMod.dll"
+  printf '%s\n' 'x' >"$incoming/newer2/INSTALL_1.4.4.txt"
+  printf '%s\n' "$incoming/newer2" >"$chosen"
+  ALLOW_SKIP_SAME=0
+  install_selected_packages "$chosen" "$incoming" "incoming"
+  [[ -d "$mods/3591341282_EscapeFromDuckovCoopMod_1.4.4" ]] || die "self-test: 1.4.4 not installed"
+  [[ ! -d "$mods/3591341282" ]] || die "self-test: workshop 原版 remained beside melody-fork"
+  [[ ! -d "$mods/3591341282_EscapeFromDuckovCoopMod_1.4.3" ]] || die "self-test: older fork remained after 1.4.4"
 
   note "self-test ok"
 }

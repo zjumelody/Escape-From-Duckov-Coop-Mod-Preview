@@ -3,11 +3,16 @@
 # Print a content fingerprint of both Duckov config folders.
 # The GUI compares the text with config-sync-state.js. It does not decide colors.
 #
-# Identity ignores mtime. NEWEST_MTIME is the newest whole-second mtime among
-# tracked regular files and symlinks. Directory mtime is used only when the
-# tree has no files or symlinks (an empty folder still has a time). Finder
-# updates the folder mtime when it writes .DS_Store, and those files are
-# ignored, so folder mtime is not the "which side is newer" signal.
+# Identity ignores mtime.
+# NEWEST_MTIME: newest whole-second mtime among tracked regular files and
+#   symlinks; if none, fall back to tracked directory mtimes (incl. root).
+# NEWEST_DIR_MTIME: newest mtime among tracked subdirectories only (not the
+#   side root — exclude-root for safety even though the GUI write-probe is now a
+#   sibling under the parent Application Support folder).
+# GUI compare: when leaf NEWEST_MTIME values are unequal, use leaves only; when
+# they tie or are missing, use max(leaf, NEWEST_DIR_MTIME) whether fingerprints
+# match or not — so same-named empty folders created at different times still
+# show unequal button times / 较新 vs 较旧.
 # .DS_Store, .localized, and AppleDouble (._*) are omitted.
 # A path that contains a tab or newline is skipped, and that side is marked
 # SKIPPED 1 so the GUI will not call the trees identical.
@@ -113,13 +118,21 @@ emit_side() {
     return 0
   fi
 
-  note_mtime "$(mtime_of ".")" dir
+  # Do NOT count the side root dir mtime (exclude-root). GUI write-probe is a
+  # sibling of the config root now, but keep this guard if anything else touches
+  # the root (Finder, sync, leftover tools).
+  # 不算侧根目录时间。GUI 写入探测已在同级，仍排除根以防其它操作碰根。
 
   while IFS= read -r -d '' path; do
     rel="${path#./}"
     base=$(basename "$path")
     case "$base" in
-      .DS_Store|.localized|._*)
+      .DS_Store|.localized|._*|.DuckovCoopPrepare-perm-probe-*)
+        continue
+        ;;
+    esac
+    case "$base" in
+      *.write-probe-*)
         continue
         ;;
     esac
@@ -162,6 +175,11 @@ emit_side() {
     printf 'NEWEST_MTIME %s\n' "$dir_newest"
   else
     printf 'NEWEST_MTIME -\n'
+  fi
+  if [[ "$dir_have" -eq 1 ]]; then
+    printf 'NEWEST_DIR_MTIME %s\n' "$dir_newest"
+  else
+    printf 'NEWEST_DIR_MTIME -\n'
   fi
   if [[ "$skipped" -eq 1 ]]; then
     printf 'SKIPPED 1\n'

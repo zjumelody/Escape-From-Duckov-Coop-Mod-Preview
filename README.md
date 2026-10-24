@@ -101,7 +101,7 @@ chmod +x prepare-duckov-coop-app.sh
 2. 调整副本的 entitlements：关闭 App Sandbox；启用 `com.apple.security.network.client` 与 `com.apple.security.network.server`。
 3. 对本机副本执行 `codesign` 本地签名（身份 `-`）。每人在自己电脑上对自己的副本签一次即可。
 4. 将本 Fork Release 中的联机 Mod（及所需依赖 Mod）放入 `Duckov-COOP.app/Contents/Mods/`。
-5. **只启动** `Duckov-COOP.app` 进行联机；联机各方 ModVersion 字符串必须完全一致（Windows / Mac 共用同一版本号，例如 Release 中的 `1.4.2`）。
+5. **只启动** `Duckov-COOP.app` 进行联机；联机各方 ModVersion 字符串必须完全一致（Windows / Mac 共用同一版本号，例如 Release 中的 `1.4.2_melody`）。
 
 ### 注意
 

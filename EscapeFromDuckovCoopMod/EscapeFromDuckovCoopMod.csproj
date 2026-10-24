@@ -315,6 +315,17 @@
         <Copy SourceFiles="..\EscapeFromDuckovModApi\bin\$(Configuration)\netstandard2.1\EscapeFromDuckovModApi.dll" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" Condition="Exists('..\EscapeFromDuckovModApi\bin\$(Configuration)\netstandard2.1\EscapeFromDuckovModApi.dll')" />
         <Message Text="Copied ModApi DLL -&gt; $(_ModFolder)\EscapeFromDuckovModApi.dll" Importance="High" Condition="Exists('..\EscapeFromDuckovModApi\bin\$(Configuration)\netstandard2.1\EscapeFromDuckovModApi.dll')" />
 
+        <!-- info.ini（含 channel=melody-fork，供 DuckovCoopPrepare 识别） -->
+        <Copy SourceFiles="info.ini" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" Condition="Exists('info.ini')" />
+        <Message Text="Copied info.ini -&gt; $(_ModFolder)\info.ini" Importance="High" Condition="Exists('info.ini')" />
+
+        <!-- INSTALL_{version}.txt — version label preferred by DuckovCoopPrepare package_version_label -->
+        <ItemGroup>
+            <InstallVersionMarkers Include="INSTALL_*.txt" />
+        </ItemGroup>
+        <Copy SourceFiles="@(InstallVersionMarkers)" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" Condition="'@(InstallVersionMarkers)' != ''" />
+        <Message Text="Copied INSTALL version markers -&gt; $(_ModFolder)" Importance="High" Condition="'@(InstallVersionMarkers)' != ''" />
+
         <!-- 复制本地化文件 -->
         <ItemGroup>
             <LocalizationFiles Include="$(OutputPath)\Localization\*.json" />
